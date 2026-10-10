@@ -162,48 +162,6 @@ func Open(path string) (*LogStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化日志表失败: %w", err)
 	}
-	// 旧库迁移：v1.3.0 之前的库无 tokens_per_second 列，v1.5.0 之前的库无 generation_ms 列，
-	// v1.7.1 之前的库无 first_content_ms/last_chunk_ms/sent_bytes/last_sent_ms 列，
-	// v1.7.5 之前的库无四组请求/响应详情列与 first_byte_ms 列。
-	// v1.0.0（S5）：预查 PRAGMA table_info 决定是否执行 ALTER——旧实现靠错误消息文本
-	// "duplicate column" 判重，依赖 modernc.org/sqlite 当前版本的错误文案；该文案
-	// 非 API 契约，依赖库升级或本地化时会误判为致命错误导致启动失败。
-	existing := map[string]bool{}
-	if rows, err := db.Query(`PRAGMA table_info(call_logs)`); err == nil {
-		for rows.Next() {
-			var cid, notnull, pk int
-			var name, ctype string
-			var dflt sql.NullString
-			if rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk) == nil {
-				existing[name] = true
-			}
-		}
-		rows.Close()
-	}
-	for _, m := range []struct{ col, ddl string }{
-		{"tokens_per_second", `ALTER TABLE call_logs ADD COLUMN tokens_per_second REAL DEFAULT 0`},
-		{"generation_ms", `ALTER TABLE call_logs ADD COLUMN generation_ms INTEGER DEFAULT 0`},
-		{"first_byte_ms", `ALTER TABLE call_logs ADD COLUMN first_byte_ms INTEGER DEFAULT 0`},
-		{"first_content_ms", `ALTER TABLE call_logs ADD COLUMN first_content_ms INTEGER DEFAULT 0`},
-		{"last_chunk_ms", `ALTER TABLE call_logs ADD COLUMN last_chunk_ms INTEGER DEFAULT 0`},
-		{"sent_bytes", `ALTER TABLE call_logs ADD COLUMN sent_bytes INTEGER DEFAULT 0`},
-		{"last_sent_ms", `ALTER TABLE call_logs ADD COLUMN last_sent_ms INTEGER DEFAULT 0`},
-		{"client_req_url", `ALTER TABLE call_logs ADD COLUMN client_req_url TEXT`},
-		{"upstream_url", `ALTER TABLE call_logs ADD COLUMN upstream_url TEXT`},
-		{"upstream_req_headers", `ALTER TABLE call_logs ADD COLUMN upstream_req_headers TEXT`},
-		{"upstream_req_body", `ALTER TABLE call_logs ADD COLUMN upstream_req_body TEXT`},
-		{"client_resp_status", `ALTER TABLE call_logs ADD COLUMN client_resp_status INTEGER`},
-		{"client_resp_headers", `ALTER TABLE call_logs ADD COLUMN client_resp_headers TEXT`},
-		{"client_resp_body", `ALTER TABLE call_logs ADD COLUMN client_resp_body TEXT`},
-	} {
-		if existing[m.col] {
-			continue
-		}
-		if _, err := db.Exec(m.ddl); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("迁移日志表失败: %w", err)
-		}
-	}
 	s := &LogStore{db: db, path: path, ch: make(chan *CallLog, 2048), quit: make(chan struct{}), done: make(chan struct{})}
 	go s.writer()
 	return s, nil

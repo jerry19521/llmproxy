@@ -1,14 +1,3 @@
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: 'cf7696a9-5514-4b67-84d3-23fcaa77069b'
-  PropagateID: 'cf7696a9-5514-4b67-84d3-23fcaa77069b'
-  ReservedCode1: '62372f10-fb14-4a28-83fd-721a670fd182'
-  ReservedCode2: '62372f10-fb14-4a28-83fd-721a670fd182'
----
-
 # LLMProxy 大模型代理工具 — 需求规格说明书
 
 ## 文档信息

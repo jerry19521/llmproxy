@@ -22,10 +22,10 @@ func TestNewUpstreamRequestUserAgentPriority(t *testing.T) {
 		wantUA    string // 期望值（wantSet=false 时忽略）
 	}{
 		{"未配置全局+无自定义头：不设置", "", nil, false, ""},
-		{"全局默认+无自定义头：用全局", "llmproxy/1.8.6", nil, true, "llmproxy/1.8.6"},
-		{"全局默认+自定义UA：自定义优先", "llmproxy/1.8.6", []config.ProviderHeader{{Key: "User-Agent", Value: "curl/8.10.1"}}, true, "curl/8.10.1"},
+		{"全局默认+无自定义头：用全局", "llmproxy/1.0.0", nil, true, "llmproxy/1.0.0"},
+		{"全局默认+自定义UA：自定义优先", "llmproxy/1.0.0", []config.ProviderHeader{{Key: "User-Agent", Value: "curl/8.10.1"}}, true, "curl/8.10.1"},
 		{"未配置全局+自定义UA：用自定义", "", []config.ProviderHeader{{Key: "User-Agent", Value: "myapp/1.0"}}, true, "myapp/1.0"},
-		{"自定义头其他键不影响UA", "llmproxy/1.8.6", []config.ProviderHeader{{Key: "X-Forwarded-For", Value: "119.45.46.124"}}, true, "llmproxy/1.8.6"},
+		{"自定义头其他键不影响UA", "llmproxy/1.0.0", []config.ProviderHeader{{Key: "X-Forwarded-For", Value: "119.45.46.124"}}, true, "llmproxy/1.0.0"},
 	}
 	for _, c := range cases {
 		p := &config.Provider{Headers: c.headers}

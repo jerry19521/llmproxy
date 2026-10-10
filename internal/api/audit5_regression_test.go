@@ -34,13 +34,13 @@ func TestSettingsDefaultUserAgentRoundTrip(t *testing.T) {
 	s := &Server{Mgr: m, State: state, Listen: "127.0.0.1:0"}
 
 	// PUT：设置全局默认 UA
-	req := httptest.NewRequest("PUT", "/api/settings", strings.NewReader(`{"default_user_agent":"llmproxy/1.8.6"}`))
+	req := httptest.NewRequest("PUT", "/api/settings", strings.NewReader(`{"default_user_agent":"llmproxy/1.0.0"}`))
 	rec := httptest.NewRecorder()
 	s.handleSettingsPut(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("PUT /api/settings status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := state.Snap().DefaultUserAgent; got != "llmproxy/1.8.6" {
+	if got := state.Snap().DefaultUserAgent; got != "llmproxy/1.0.0" {
 		t.Errorf("快照未生效: %q", got)
 	}
 
@@ -57,7 +57,7 @@ func TestSettingsDefaultUserAgentRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(rec2.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.DefaultUserAgent != "llmproxy/1.8.6" {
+	if got.DefaultUserAgent != "llmproxy/1.0.0" {
 		t.Errorf("GET 回读异常: %q", got.DefaultUserAgent)
 	}
 
@@ -66,7 +66,7 @@ func TestSettingsDefaultUserAgentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "default_user_agent: llmproxy/1.8.6") {
+	if !strings.Contains(string(data), "default_user_agent: llmproxy/1.0.0") {
 		t.Errorf("yml 缺少 default_user_agent:\n%s", data)
 	}
 
@@ -119,10 +119,10 @@ func TestProviderTestUserAgentPriority(t *testing.T) {
 		t.Errorf("未配置全局默认时应为 Go 默认 UA，实际: %q", got)
 	}
 	// 配置全局默认：应用
-	if err := s.State.MutateSettings(func(ns *core.Snapshot) { ns.DefaultUserAgent = "llmproxy/1.8.6" }); err != nil {
+	if err := s.State.MutateSettings(func(ns *core.Snapshot) { ns.DefaultUserAgent = "llmproxy/1.0.0" }); err != nil {
 		t.Fatal(err)
 	}
-	if got := run("[]"); got != "llmproxy/1.8.6" {
+	if got := run("[]"); got != "llmproxy/1.0.0" {
 		t.Errorf("无自定义头应用全局默认 UA，实际: %q", got)
 	}
 	// 供应商自定义 UA：覆盖全局默认
@@ -145,7 +145,7 @@ func TestFetchModelsUserAgent(t *testing.T) {
 	defer up.Close()
 
 	s, _ := newAuditServer(t)
-	if err := s.State.MutateSettings(func(ns *core.Snapshot) { ns.DefaultUserAgent = "llmproxy/1.8.6" }); err != nil {
+	if err := s.State.MutateSettings(func(ns *core.Snapshot) { ns.DefaultUserAgent = "llmproxy/1.0.0" }); err != nil {
 		t.Fatal(err)
 	}
 	body := fmt.Sprintf(`{"base_url":%q,"api_type":"openai","api_keys":[{"key":"sk-x"}]}`, up.URL)
@@ -157,7 +157,7 @@ func TestFetchModelsUserAgent(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if gotUA != "llmproxy/1.8.6" {
+	if gotUA != "llmproxy/1.0.0" {
 		t.Errorf("fetch-models 应携带全局默认 UA，实际: %q", gotUA)
 	}
 }

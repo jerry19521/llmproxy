@@ -628,12 +628,10 @@ Views.Logs = {
     }
     if (seq !== App.renderSeq || reqSeq !== this.detailSeq) return;
     const attempts = Array.isArray(l.attempt_logs) ? l.attempt_logs : [];
-    // 旧数据兼容：v1.7.5 之前 req_url 记录上游 URL、流式 resp_body 为发给客户端的字节
-    const upstreamURL = l.upstream_url || l.req_url || '';
-    // v1.0.0（B2）：client_resp_body 回退仅限 v1.7.5 之前的旧数据（该列不存在，且 resp_body
-    // 本就是发给客户端的字节）。新数据以 upstream_url / client_resp_status 字段识别，
-    // 不再回退——避免「客户端断开」等失败日志（client_resp_body 为空、resp_body 是
-    // 未送达客户端的上游响应）被错误展示为客户端响应。判定逻辑抽取为 LogParser 纯函数（可单测）。
+    const upstreamURL = l.upstream_url || '';
+    // v1.0.0 起所有日志都是新结构：直接取 client_resp_body（LogParser 抽离为纯函数）。
+    // 不再回退到 resp_body——失败 / 客户端断开时 client_resp_body 为空即"未送达"，
+    // resp_body 是上游响应、未必等于已写入客户端的内容。
     const clientRespBody = LogParser.clientRespBody(l);
     const R = this.makeRenderer();
 
@@ -726,7 +724,7 @@ Views.Logs = {
       ].join(''),
       raw: () => [
         this.renderRawSection(R, '客户端请求（客户端 → 代理）', [
-          ['URL', `<span class="mono">${U.esc(l.client_req_url || (l.req_method ? l.req_method + '（路径未记录，v1.7.5 之前日志）' : '-'))}</span>`],
+          ['URL', `<span class="mono">${U.esc(l.client_req_url || (l.req_method ? l.req_method + '（路径未记录）' : '-'))}</span>`],
           ['方法', U.esc(l.req_method || '-')],
         ], '请求头', l.req_headers, '请求体', l.req_body),
         this.renderRawSection(R, '上游请求（代理 → 供应商）', [

@@ -748,29 +748,23 @@ const LogParser = (() => {
     return out;
   }
 
-  // ---------- v1.0.0：调用详情数据源判定（B2 修复）----------
+  // ---------- v1.0.0：调用详情数据源 ----------
 
-  // isV18Log 判定日志是否为 v1.7.5 之后的新结构（含 upstream_url / client_resp_status 字段）。
-  // 旧数据（v1.7.5 之前）无这些字段：client_resp_body 列不存在、resp_body 本就是发给客户端的字节，
-  // 详情页「客户端响应」需回退展示 resp_body。新数据以这些字段识别，client_resp_body 即真实客户端响应，
-  // 为空表示未送达（如「客户端断开」失败日志），不应回退到 resp_body（那本是上游未送达的内容）。
-  function isV18Log(l) {
-    return l != null && (l.upstream_url !== undefined || l.client_resp_status !== undefined);
-  }
-
-  // clientRespBody 返回详情页「客户端响应」区块应展示的响应体：
-  // 新数据取 client_resp_body（可能为空/undefined=未送达）；旧数据回退 resp_body。
+  // clientRespBody 返回详情页「客户端响应」区块应展示的响应体。
+  // v1.0.0 起所有日志都是新结构（client_resp_body 列必存在）：
+  //   - 正常响应：该字段存实际写入客户端的字节
+  //   - 失败 / 客户端断开：该字段为空或 null（语义即"未送达"）
+  // 不再回退到 resp_body——resp_body 是上游响应，未必等于已写入客户端的内容。
   // null 安全：入参为 null/undefined 时返回 undefined（不抛错）。
   function clientRespBody(l) {
     if (l == null) return undefined;
-    return isV18Log(l) ? l.client_resp_body : l.resp_body;
+    return l.client_resp_body;
   }
 
   return {
     version: '1.0.0',
     FORMAT_LABELS,
     isTruncated,
-    isV18Log,
     clientRespBody,
     parseRequest,
     parseResponse,

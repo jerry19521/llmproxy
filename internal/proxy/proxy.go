@@ -25,8 +25,9 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// Version 构建版本号。
-const Version = "1.8.6"
+// Version 构建版本号。与 main.go 的 buildVersion 默认值保持一致：
+// 启动时 main 会用 -ldflags "-X main.buildVersion=<x.y.z>" 覆盖为实际构建版本。
+const Version = "1.0.0"
 
 // Handler 代理转发处理器。
 type Handler struct {

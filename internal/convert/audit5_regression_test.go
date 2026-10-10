@@ -20,13 +20,13 @@ func TestSetDefaultUserAgent(t *testing.T) {
 	}
 	// 非空：设置
 	h2 := http.Header{}
-	SetDefaultUserAgent(h2, "llmproxy/1.8.6")
-	if got := h2.Get("User-Agent"); got != "llmproxy/1.8.6" {
-		t.Errorf("UA 应为 llmproxy/1.8.6，实际: %q", got)
+	SetDefaultUserAgent(h2, "llmproxy/1.0.0")
+	if got := h2.Get("User-Agent"); got != "llmproxy/1.0.0" {
+		t.Errorf("UA 应为 llmproxy/1.0.0，实际: %q", got)
 	}
 	// 供应商自定义头（后应用）覆盖全局默认
 	h3 := http.Header{}
-	SetDefaultUserAgent(h3, "llmproxy/1.8.6")
+	SetDefaultUserAgent(h3, "llmproxy/1.0.0")
 	h3.Set("User-Agent", "curl/8.10.1")
 	if got := h3.Get("User-Agent"); got != "curl/8.10.1" {
 		t.Errorf("供应商自定义 UA 应覆盖全局默认，实际: %q", got)
