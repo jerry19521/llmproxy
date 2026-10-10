@@ -1,4 +1,4 @@
-// Package config 负责 LLMProxy 的配置定义、加载、保存、自动生成与热加载。
+﻿// Package config 负责 LLMProxy 的配置定义、加载、保存、自动生成与热加载。
 package config
 
 import (
@@ -86,7 +86,7 @@ type JWTConfig struct {
 	ExpireHours int    `yaml:"expire_hours" json:"expire_hours"`
 }
 
-// normalize 归一化 JWT 配置（v1.8.3，L2 修复）：expire_hours 为 0/负值时回退 24。
+// normalize 归一化 JWT 配置（v1.0.0，L2 修复）：expire_hours 为 0/负值时回退 24。
 // 否则手写 yml 配 expire_hours: 0 会导致登录成功但 token 即刻过期（签发即失效），
 // 管理员被锁在门外且无任何提示。与 CooldownConfig.normalize 同模式兜底。
 func (c *JWTConfig) normalize() {
@@ -98,7 +98,7 @@ func (c *JWTConfig) normalize() {
 // LogConfig 日志配置。
 type LogConfig struct {
 	DBPath  string `yaml:"db_path" json:"db_path"`
-	Enabled *bool  `yaml:"enabled,omitempty" json:"-"` // 是否记录调用日志（v1.8.1）：nil（旧配置无该字段）视为 false，默认不记录
+	Enabled *bool  `yaml:"enabled,omitempty" json:"-"` // 是否记录调用日志（v1.0.0）：nil（旧配置无该字段）视为 false，默认不记录
 }
 
 // EnabledVal 返回是否记录调用日志（nil 视为 false：默认关闭，含旧配置升级场景）。
@@ -153,13 +153,13 @@ type Config struct {
 	Cooldown               CooldownConfig `yaml:"cooldown" json:"cooldown"`
 	UpstreamTimeoutSeconds int            `yaml:"upstream_timeout_seconds" json:"upstream_timeout_seconds"`
 	TestMessage            string         `yaml:"test_message" json:"test_message"`
-	DefaultUserAgent       string         `yaml:"default_user_agent" json:"default_user_agent"` // 发往上游的默认 User-Agent（v1.8.6）；空=不设置（用 Go 默认）；供应商自定义头可覆盖
+	DefaultUserAgent       string         `yaml:"default_user_agent" json:"default_user_agent"` // 发往上游的默认 User-Agent（v1.0.0）；空=不设置（用 Go 默认）；供应商自定义头可覆盖
 	Providers              []*Provider    `yaml:"providers" json:"providers"`
 	APIKeys                []*ProxyKey    `yaml:"apikeys" json:"apikeys"`
 }
 
 // Manager 管理配置文件的加载、保存与热加载检测。
-// 并发模型（v1.7.6 起）：m.cfg 一经发布即不可变——Update 作用在浅拷贝上，
+// 并发模型（v1.0.0 起）：m.cfg 一经发布即不可变——Update 作用在浅拷贝上，
 // Watch 整体替换指针；Cfg() 返回的旧对象后续不会被原地修改，
 // 管理接口的并发读（requireAuth/handleLogin 等）与写不存在数据竞争。
 type Manager struct {
@@ -237,7 +237,7 @@ func randomString(n int) string {
 	for len(out) < n {
 		if _, err := rand.Read(buf); err != nil {
 			// 熵源失败退化路径（极端环境），保持可用性。
-			// v1.8.4（S8）：旧退化路径以全零 buf[0] 为起点逐字符递增，产出 'a','b','c'…
+			// v1.0.0（S8）：旧退化路径以全零 buf[0] 为起点逐字符递增，产出 'a','b','c'…
 			// 完全可预测的顺序凭证；改用时间熵驱动的线性同余序列，虽不及 CSPRNG
 			// 但不再源码级可预测。
 			state := time.Now().UnixNano() ^ int64(os.Getpid())<<32
@@ -319,7 +319,7 @@ func (m *Manager) Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
-	warnWeakJWTSecret(cfg) // v1.8.4（S13）：手写弱 secret 告警（仅启动时提示一次，不拒绝启动）
+	warnWeakJWTSecret(cfg) // v1.0.0（S13）：手写弱 secret 告警（仅启动时提示一次，不拒绝启动）
 	m.cfg = cfg
 	m.stat()
 	if changed {
@@ -347,7 +347,7 @@ func parseAndPrepare(data []byte) (*Config, string, bool, error) {
 		return nil, "", false, err
 	}
 	cfg.Cooldown.normalize() // 兼容旧版 duration_minutes 字段
-	cfg.JWT.normalize()      // 兼容 expire_hours 0/负值（v1.8.3 L2）
+	cfg.JWT.normalize()      // 兼容 expire_hours 0/负值（v1.0.0 L2）
 	// 需求 5.2.3/9.1：手动清空 admin.password / jwt.secret 后自动重新生成
 	pwd, changed, err := cfg.GenerateInitialCredentials()
 	if err != nil {
@@ -356,7 +356,7 @@ func parseAndPrepare(data []byte) (*Config, string, bool, error) {
 	return cfg, pwd, changed, nil
 }
 
-// warnWeakJWTSecret 对手写弱 JWT secret 打印告警（v1.8.4 S13）：
+// warnWeakJWTSecret 对手写弱 JWT secret 打印告警（v1.0.0 S13）：
 // HS256 的安全性完全依赖 secret 强度，弱 secret 可被持有任一有效 token 的
 // 攻击者离线字典爆破后伪造管理 token。不拒绝启动（避免破坏既有部署），仅提示。
 func warnWeakJWTSecret(cfg *Config) {
@@ -421,7 +421,7 @@ func (m *Manager) saveLocked(cfg *Config) error {
 		os.Remove(tmpName)
 		return err
 	}
-	// v1.8.4（S12）：rename 前先 fsync——掉电/崩溃时 rename 的元数据可能先于数据块
+	// v1.0.0（S12）：rename 前先 fsync——掉电/崩溃时 rename 的元数据可能先于数据块
 	// 持久化，config.yml（含全部上游 Key 与 bcrypt 哈希）会损坏成空文件或半新半旧内容。
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
@@ -469,7 +469,7 @@ func (m *Manager) Watch() {
 				m.lastSize = fi.Size()
 				data, err := os.ReadFile(m.path)
 				if err != nil {
-					// v1.8.4（S9）：回滚 mtime 标记让下轮 tick 重试，并打印告警——
+					// v1.0.0（S9）：回滚 mtime 标记让下轮 tick 重试，并打印告警——
 					// 旧实现已消费 mtime 且静默 continue，本次外部编辑永久错过且无日志可查
 					//（与 L6 修复的“误以为改了实际没改”同类问题，失败点更靠前）。
 					// 瞬时失败（编辑器原子替换中间态、文件锁）重试可自愈。
@@ -480,7 +480,7 @@ func (m *Manager) Watch() {
 				}
 				cfg, pwd, credChanged, err := parseAndPrepare(data)
 				if err != nil {
-					// v1.8.3（L6）：解析失败不再静默——保持旧配置是安全的，但必须让用户
+					// v1.0.0（L6）：解析失败不再静默——保持旧配置是安全的，但必须让用户
 					// 知道热加载未生效（否则误以为改了实际没改，与可排查性要求相悖）。
 					// 解析失败不回滚 mtime：内容坏重试无意义，用户修复后 mtime 再变会重新触发。
 					fmt.Printf("[hot-reload] 配置解析失败，保持原配置不变: %v\n", err)
@@ -511,7 +511,7 @@ func (m *Manager) Watch() {
 	}()
 }
 
-// AbsorbExternalChange 吸收外部编辑产生的配置变更（v1.8.4 M7）。
+// AbsorbExternalChange 吸收外部编辑产生的配置变更（v1.0.0 M7）。
 // 由 State.Mutate 在写盘前调用：检测到文件自上次加载后被外部修改时，先把文件内容
 // 重新加载进内存（含归一化与凭证生成），使后续基于内存快照的保存包含外部变更——
 // 消除「外部编辑落盘后 2 秒内（Watch 下一 tick 前）界面保存把外部变更静默覆盖」的
@@ -553,7 +553,7 @@ func (m *Manager) AbsorbExternalChange() (bool, error) {
 	return true, nil
 }
 
-// Stop 停止热加载轮询（幂等：重复调用不会 panic，与 core.State.Stop 同防护风格，v1.8.3 L4）。
+// Stop 停止热加载轮询（幂等：重复调用不会 panic，与 core.State.Stop 同防护风格，v1.0.0 L4）。
 func (m *Manager) Stop() {
 	select {
 	case <-m.stopCh:

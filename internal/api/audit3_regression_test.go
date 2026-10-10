@@ -1,6 +1,6 @@
-package api
+﻿package api
 
-// v1.8.4 复查修复的回归测试（对应需求 12 版本更新记录 v1.8.4 小节）：
+// v1.0.0 复查修复的回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
 //   M9  fetch-models 表单模式 Key 上限 50 / M10 登录失败按 IP 滑窗限流 /
 //   A4  apikey 更新锁内捕获更新结果 / A6 dashboard「今日」边界本地时区 RFC3339 /
 //   A7  statistics dimension 白名单 / A8 custom 全未来区间 400 /
@@ -179,7 +179,7 @@ func TestStatisticsCustomFutureRangeRejected(t *testing.T) {
 	if got := do("?range=custom&custom_start=2020-01-01&custom_end=2999-01-01"); got != http.StatusOK {
 		t.Errorf("A8：跨当前时间的区间应 200（end 被 clamp 到 now），实际 %d", got)
 	}
-	// v1.8.3（F12）反向区间顺手回归
+	// v1.0.0（F12）反向区间顺手回归
 	if got := do("?range=custom&custom_start=2026-01-02&custom_end=2026-01-01"); got != http.StatusBadRequest {
 		t.Errorf("A8：反向区间应 400（F12），实际 %d", got)
 	}

@@ -1,9 +1,9 @@
-// ===== 代理 Key 管理视图 =====
+﻿// ===== 代理 Key 管理视图 =====
 Views.APIKeys = {
   fullKeys: {}, // id → 完整 key（按需拉取后缓存于当前页面会话）
 
   async render(el) {
-    const seq = App.renderSeq; // M9（v1.7.6）：路由切换守卫
+    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
     el.innerHTML = '<div class="muted">加载中...</div>';
     try {
       const res = await API.get('/api/apikeys');
@@ -49,7 +49,7 @@ Views.APIKeys = {
         });
       });
     } catch (e) {
-      if (seq !== App.renderSeq) return; // v1.8.3（F2）：页面已切换时迟到的失败响应不覆盖新页面
+      if (seq !== App.renderSeq) return; // v1.0.0（F2）：页面已切换时迟到的失败响应不覆盖新页面
       el.innerHTML = `<div class="card"><h3>加载失败</h3><p class="muted">${U.esc(e.message)}</p></div>`;
     }
   },
@@ -76,7 +76,7 @@ Views.APIKeys = {
           full = d.key;
           this.fullKeys[item.id] = full;
         }
-        // v1.8.3（F3）：改用带降级的复制工具，非安全上下文（http://IP 访问）不再必然失败
+        // v1.0.0（F3）：改用带降级的复制工具，非安全上下文（http://IP 访问）不再必然失败
         if (await U.copyText(full)) showToast('已复制完整 Key 到剪贴板', 'ok');
         else showToast('复制失败：请手动选中复制', 'err');
       } else if (act === 'toggle') {
@@ -98,7 +98,7 @@ Views.APIKeys = {
   },
 
   async editDialog(item) {
-    // v1.8.4（F1）：await 期间路由可能已切换——捕获序号，迟到的响应不再弹出表单覆盖新页面
+    // v1.0.0（F1）：await 期间路由可能已切换——捕获序号，迟到的响应不再弹出表单覆盖新页面
     const seq = App.renderSeq;
     // 可用模型数据源
     let allModels = [];
@@ -108,7 +108,7 @@ Views.APIKeys = {
       allModels = res.models || [];
     } catch (e) {
       if (seq !== App.renderSeq) return; // 页面已切换：迟到的失败不再弹 toast
-      // v1.8.3（F10）：不再静默吞错——提示加载失败，已勾选模型仍可保存（转入额外模型输入框）
+      // v1.0.0（F10）：不再静默吞错——提示加载失败，已勾选模型仍可保存（转入额外模型输入框）
       showToast('模型列表加载失败：' + e.message + '（已有勾选仍可保存）', 'err');
     }
     const modelOptions = allModels.map(m =>
@@ -151,7 +151,7 @@ Views.APIKeys = {
     };
     document.getElementById('akf-cancel').onclick = () => Modal.close();
     document.getElementById('akf-save').onclick = async (e) => {
-      // v1.8.3（F6）：保存期间禁用按钮，防双击重复提交
+      // v1.0.0（F6）：保存期间禁用按钮，防双击重复提交
       const btn = e.target;
       if (btn.disabled) return;
       btn.disabled = true;

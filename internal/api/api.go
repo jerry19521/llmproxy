@@ -1,4 +1,4 @@
-// Package api 管理后台 HTTP 接口：登录认证、供应商管理、代理 Key 管理、
+﻿// Package api 管理后台 HTTP 接口：登录认证、供应商管理、代理 Key 管理、
 // 基础设置、冷却池、调用日志、仪表盘与统计。
 package api
 
@@ -28,12 +28,12 @@ type Server struct {
 	// OnLogPathChange 日志路径热更回调（由 main 注入）
 	OnLogPathChange func(newPath string) error
 
-	// OnLogRecreate 清空日志回调（v1.8.1，由 main 注入）：删除库文件并重建空库，
+	// OnLogRecreate 清空日志回调（v1.0.0，由 main 注入）：删除库文件并重建空库，
 	// 成功后调用方需用新 store 替换旧引用；无回调（测试环境）时清空降级为 SQL 删除。
 	OnLogRecreate func() error
 
 	// logOpMu 日志库重建互斥：防止并发清空（双击/多管理员）交错重建互相删掉新库。
-	// v1.8.4（A5）：改为读写锁——清空（重建）持写锁，日志查询/单删持读锁：
+	// v1.0.0（A5）：改为读写锁——清空（重建）持写锁，日志查询/单删持读锁：
 	// 重建窗口（关旧库→删文件→重开→swap 引用）内并发查询不再拿到已关闭的旧
 	// store 报 database is closed 瞬态 500，而是阻塞等待重建完成后用新 store 正常返回。
 	logOpMu sync.RWMutex
@@ -50,7 +50,7 @@ func (s *Server) LogStore() *logsdb.LogStore {
 	return nil
 }
 
-// SwitchLogPathLocked 以 logOpMu 写锁执行日志路径切换（v1.8.5（G2）补全）。
+// SwitchLogPathLocked 以 logOpMu 写锁执行日志路径切换（v1.0.0（G2）补全）。
 // 配置热加载 Watch goroutine 旧实现直接调用 OnLogPathChange 回调（绕过锁），
 // 切换的「关旧库→开新库→swap」与并发查询零互斥——G1 读接口的 closed 重试一次
 // 兜底在高频切换窗口内不足（实测背靠背切换仍捕获 500）；热加载路径统一经本
@@ -104,7 +104,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeAuthErr(w, http.StatusUnauthorized, "unauthorized", "authentication_error", "unauthorized")
 			return
 		}
-		// v1.8.3（L10）：校验 token 签发用户与当前管理员一致——修改 admin.username
+		// v1.0.0（L10）：校验 token 签发用户与当前管理员一致——修改 admin.username
 		// 后旧 token（sub 为旧名）立即失效，而非持续有效到自然过期。
 		if username != cfg.Admin.Username {
 			writeAuthErr(w, http.StatusUnauthorized, "unauthorized", "authentication_error", "unauthorized")
@@ -162,7 +162,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/dashboard", s.requireAuth(s.handleDashboard))
 	mux.HandleFunc("GET /api/statistics", s.requireAuth(s.handleStatistics))
 
-	// 管理接口不允许跨域：对预检返回 405；请求体统一限制 8MB（v1.7.6 落地，
+	// 管理接口不允许跨域：对预检返回 405；请求体统一限制 8MB（v1.0.0 落地，
 	// 防恶意/误操作超大 body 耗尽内存；代理转发端点在 proxy 层另有 64MB 限制）
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -178,7 +178,7 @@ func (s *Server) Handler() http.Handler {
 
 // ===== 登录 / 密码 =====
 
-// loginThrottle 登录失败限流状态（v1.8.4 M10）：按来源 IP 的滑动窗口计数。
+// loginThrottle 登录失败限流状态（v1.0.0 M10）：按来源 IP 的滑动窗口计数。
 // 旳实现登录接口对任意来源的失败尝试不做计数/退避/锁定，配合默认监听 0.0.0.0，
 // 任何能路由到该端口的主机都可长期离线爆破管理员密码（bcrypt 拖慢单次校验，
 // 但可无限持续）。IP 维度限流避免全局锁被恶意利用锁死管理员。
@@ -247,7 +247,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request body", "invalid_request")
 		return
 	}
-	// v1.8.4（M10）：失败次数达到上限时拒绝尝试（429），窗口滑动自动解锁；成功登录清零
+	// v1.0.0（M10）：失败次数达到上限时拒绝尝试（429），窗口滑动自动解锁；成功登录清零
 	if blocked, wait := loginBlockedByIP(r.RemoteAddr); blocked {
 		writeErr(w, http.StatusTooManyRequests,
 			fmt.Sprintf("登录失败次数过多，请约 %d 秒后重试", int(wait.Seconds())+1), "rate_limited")
@@ -317,9 +317,9 @@ type settingsPayload struct {
 	} `json:"cooldown"`
 	UpstreamTimeoutSeconds *int    `json:"upstream_timeout_seconds"`
 	TestMessage            *string `json:"test_message"`
-	DefaultUserAgent       *string `json:"default_user_agent"` // v1.8.6：发往上游的默认 UA；空=不设置（Go 默认）；供应商自定义头优先
+	DefaultUserAgent       *string `json:"default_user_agent"` // v1.0.0：发往上游的默认 UA；空=不设置（Go 默认）；供应商自定义头优先
 	Log                    *struct {
-		Enabled *bool  `json:"enabled"` // 是否记录调用日志（v1.8.1）
+		Enabled *bool  `json:"enabled"` // 是否记录调用日志（v1.0.0）
 		DBPath  string `json:"db_path"`
 	} `json:"log"`
 }
@@ -376,7 +376,7 @@ func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimSpace(body.Log.DBPath)
 		if p != s.State.Snap().LogDBPath {
 			if s.OnLogPathChange != nil {
-				// v1.8.5（G2）：路径切换持 logOpMu 写锁——旧实现不持锁，切换期间（关旧库→
+				// v1.0.0（G2）：路径切换持 logOpMu 写锁——旧实现不持锁，切换期间（关旧库→
 				// 开新库→swap 引用）并发查询持旧引用直接 database is closed（实测可复现）。
 				// 持写锁后查询引用在锁内获取，切换全程互斥；锁序与清空路径一致
 				//（logOpMu → main 层 logSw.mu），无死锁风险。
@@ -424,26 +424,26 @@ func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 		if body.TestMessage != nil {
 			ns.TestMessage = *body.TestMessage
 		}
-		// v1.8.6：默认 UA 允许清空（回退 Go 默认），TrimSpace 后纯空白视为空
+		// v1.0.0：默认 UA 允许清空（回退 Go 默认），TrimSpace 后纯空白视为空
 		if body.DefaultUserAgent != nil {
 			ns.DefaultUserAgent = strings.TrimSpace(*body.DefaultUserAgent)
 		}
 		if newLogPath != "" {
 			ns.LogDBPath = newLogPath
 		}
-		// 日志记录开关（v1.8.1）：热加载生效，同步落盘 config.yml
+		// 日志记录开关（v1.0.0）：热加载生效，同步落盘 config.yml
 		if body.Log != nil && body.Log.Enabled != nil {
 			ns.LogEnabled = *body.Log.Enabled
 		}
 	})
 	if err != nil {
-		// v1.8.3（M3）：日志路径切换已成功但配置持久化失败——回切旧库保持三方一致
+		// v1.0.0（M3）：日志路径切换已成功但配置持久化失败——回切旧库保持三方一致
 		//（旧实现：运行态写新库、配置文件/设置页显示旧路径，重启后回旧库，
 		// 切换窗口期写入新库的日志“凭空消失”；旧库文件未被删除，重新打开即可恢复）。
 		if newLogPath != "" && s.OnLogPathChange != nil {
 			oldPath := s.State.Snap().LogDBPath // MutateSettings 失败时快照未更新，仍为旧路径
 			fmt.Printf("[settings] 日志路径已切换到 %s 但保存配置失败，正在回滚到 %s…\n", newLogPath, oldPath)
-			// v1.8.5（G2）：回滚同样持写锁（与正向切换同口径）
+			// v1.0.0（G2）：回滚同样持写锁（与正向切换同口径）
 			s.logOpMu.Lock()
 			rbErr := s.OnLogPathChange(oldPath)
 			s.logOpMu.Unlock()
@@ -517,14 +517,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var st *logsdb.DashboardStats
-	// v1.8.5（G1）：store 引用锁内获取（A5 补全）——清空重建窗口内不再拿到已关旧库
+	// v1.0.0（G1）：store 引用锁内获取（A5 补全）——清空重建窗口内不再拿到已关旧库
 	s.logOpMu.RLock()
 	store := s.LogStore()
 	if store == nil {
 		s.logOpMu.RUnlock()
 		st = &logsdb.DashboardStats{}
 	} else {
-		// v1.8.4（A6）：与 statistics/日志接口同口径的本地时区 RFC3339——旧实现手工拼接
+		// v1.0.0（A6）：与 statistics/日志接口同口径的本地时区 RFC3339——旧实现手工拼接
 		// 无时区后缀的 YYYY-MM-DDT00:00:00，当前恰好因字典序巧合正确，但绕过全局
 		// 归一化口径，timestamp 存储格式任何调整时这处裸格式会静默错乱且难以排查。
 		now := time.Now()
@@ -532,7 +532,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		var err error
 		st, err = store.Dashboard(todayStart)
 		s.logOpMu.RUnlock()
-		// v1.8.5（G1）：closed 重试（热加载路径切换兑底，同 handleLogsList）
+		// v1.0.0（G1）：closed 重试（热加载路径切换兑底，同 handleLogsList）
 		if err != nil && isClosedDBErr(err) {
 			s.logOpMu.RLock()
 			if ns := s.LogStore(); ns != nil && ns != store {
@@ -601,7 +601,7 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "custom_end 需为 YYYY-MM-DD", "invalid_request")
 			return
 		}
-		// v1.8.3（F12）：反向区间直接 400——旧实现静默落入空区间返回全零数据，
+		// v1.0.0（F12）：反向区间直接 400——旧实现静默落入空区间返回全零数据，
 		// 用户会误判为服务故障。
 		if start.After(end) {
 			writeErr(w, http.StatusBadRequest, "custom_start 不能晚于 custom_end", "invalid_request")
@@ -615,7 +615,7 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 	if end.After(now) {
 		end = now
 	}
-	// v1.8.4（A8）：end 被 clamp 到 now 后 start 仍可能在未来（用户误选全未来区间）——
+	// v1.0.0（A8）：end 被 clamp 到 now 后 start 仍可能在未来（用户误选全未来区间）——
 	// 此时形成空区间静默返回全零，用户会误判为服务故障/日志丢失；与 F12 同动机补 400。
 	if start.After(now) {
 		writeErr(w, http.StatusBadRequest, "custom_start 不能晚于当前时间", "invalid_request")
@@ -624,7 +624,7 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 	startStr := start.Format(time.RFC3339)
 	endStr := end.Format(time.RFC3339)
 	dimension := q.Get("dimension")
-	// v1.8.4（A7）：非法 dimension 直接 400——旧实现静默返回空对象，前端拼写错误与
+	// v1.0.0（A7）：非法 dimension 直接 400——旧实现静默返回空对象，前端拼写错误与
 	// 「区间内确实无数据」无法区分，图表全空白容易被误判为服务故障。
 	switch dimension {
 	case "", "timeline", "provider", "model", "apikey", "apikey_detail", "summary":
@@ -641,7 +641,7 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 
 	need := func(d string) bool { return dimension == "" || dimension == d }
 
-	// v1.8.5（G1）：store 引用改在 logOpMu 读锁内获取（A5 补全），全部维度查询持锁
+	// v1.0.0（G1）：store 引用改在 logOpMu 读锁内获取（A5 补全），全部维度查询持锁
 	// 执行；遇库关闭错误时（热加载路径切换绕过 logOpMu）重取引用整体重试一次。
 	// 各维度查询为纯读、幂等，整体重跑无副作用。
 	runAll := func(store *logsdb.LogStore) (map[string]interface{}, error) {

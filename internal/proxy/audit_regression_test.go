@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.8.2 代码审查修复回归测试：A1（坏 SSE 伪造成功）/ A2（流式断开烧重试）/
+// v1.0.0 代码审查修复回归测试：A1（坏 SSE 伪造成功）/ A2（流式断开烧重试）/
 // A4（白名单首候选口径）/ C5（截断中文乱码）。
 
 // auditProviderSpec 描述审计测试栈的一个供应商。

@@ -1,9 +1,9 @@
-// ===== 设置视图（基础设置 / 路由策略 / 冷却池）=====
+﻿// ===== 设置视图（基础设置 / 路由策略 / 冷却池）=====
 Views.Settings = {
   cooldownTimer: null,
 
   async render(el) {
-    const seq = App.renderSeq; // M9（v1.7.6）：路由切换守卫
+    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
     this.stopPoll();
     el.innerHTML = '<div class="muted">加载中...</div>';
     let s;
@@ -83,7 +83,7 @@ Views.Settings = {
       document.getElementById('s-log-enabled-text').textContent = e.target.checked ? '已开启' : '已关闭';
     };
     document.getElementById('s-save').onclick = async () => {
-      // v1.8.3（F4）：数值字段做正数校验——负值/0 会被后端静默忽略但前端提示“已生效”，状态不一致
+      // v1.0.0（F4）：数值字段做正数校验——负值/0 会被后端静默忽略但前端提示“已生效”，状态不一致
       const numVal = (id, name) => {
         const v = parseInt(document.getElementById(id).value, 10);
         if (!Number.isFinite(v) || v <= 0) { showToast(name + '需为正整数', 'err'); return null; }
@@ -96,7 +96,7 @@ Views.Settings = {
       if (retry === null) return;
       const timeout = numVal('s-timeout', '上游请求超时');
       if (timeout === null) return;
-      // v1.8.4（F7）：端口做 1-65535 校验——此前 parseInt || 9080 会把任意非法值
+      // v1.0.0（F7）：端口做 1-65535 校验——此前 parseInt || 9080 会把任意非法值
       // 静默替换为 9080，用户以为改了端口、实际生效的是默认值
       const port = parseInt(document.getElementById('s-port').value, 10);
       if (!Number.isFinite(port) || port < 1 || port > 65535) { showToast('监听端口需为 1-65535 的整数', 'err'); return; }
@@ -116,7 +116,7 @@ Views.Settings = {
       };
       try {
         const res = await API.put('/api/settings', body);
-        this.cdEnabled = body.cooldown.enabled; // v1.8.2（C9）：同步冷却池启用状态，保存后空态提示立即正确
+        this.cdEnabled = body.cooldown.enabled; // v1.0.0（C9）：同步冷却池启用状态，保存后空态提示立即正确
         if (res && res.warning) showToast(res.warning, 'err');
         else showToast('设置已保存并生效', 'ok');
       } catch (e) {
@@ -137,14 +137,14 @@ Views.Settings = {
     if (this.cooldownTimer) { clearInterval(this.cooldownTimer); this.cooldownTimer = null; }
   },
 
-  // destroy 视图卸载钩子（v1.8.3，F9）：离开设置页时立即停止冷却池轮询
+  // destroy 视图卸载钩子（v1.0.0，F9）：离开设置页时立即停止冷却池轮询
   // （不再依赖“下一次 tick 发现元素不存在后自杀”的 10 秒延迟窗口）。
   destroy() {
     this.stopPoll();
   },
 
   async pollCooldown() {
-    const seq = App.renderSeq; // M9（v1.7.6）：页面切换后停止旧页面的轮询写回
+    const seq = App.renderSeq; // M9（v1.0.0）：页面切换后停止旧页面的轮询写回
     const box = document.getElementById('cooldown-list');
     if (!box || seq !== App.renderSeq) { this.stopPoll(); return; }
     try {

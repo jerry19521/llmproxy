@@ -1,11 +1,11 @@
-package convert
+﻿package convert
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// v1.8.2 代码审查修复回归测试：A3（Responses 文本块累积）/ C6（SSE 多行 data usage 提取）。
+// v1.0.0 代码审查修复回归测试：A3（Responses 文本块累积）/ C6（SSE 多行 data usage 提取）。
 
 // parseSSEResponsesOut 把转换器输出的 SSE 字节解析为事件 JSON 列表（按出现顺序）。
 // 复用包内私有 sseScanner，与生产解析路径同口径。

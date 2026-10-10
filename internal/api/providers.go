@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 type FlexAliases []string
 
 // UnmarshalJSON 兼容 "a,b" 与 ["a","b"]。
-// v1.8.3（L7）：非法类型（数字/对象/布尔）不再吞错归为空数组，而是报错——
+// v1.0.0（L7）：非法类型（数字/对象/布尔）不再吞错归为空数组，而是报错——
 // 让请求体解码阶段直接 400，配置错误不再被掩盖为“无别名”。
 func (a *FlexAliases) UnmarshalJSON(data []byte) error {
 	var s string
@@ -172,7 +172,7 @@ func validateProviderForm(body *providerPayload) error {
 }
 
 // maskedRestoreByKeyID 判断表单提交的 Key 是否为某现有 Key 的脱敏回显值（未修改）。
-// 是则返回完整值。v1.8.4（A9）：以「提交值 == MaskKey(现有 Key)」精确比对取代
+// 是则返回完整值。v1.0.0（A9）：以「提交值 == MaskKey(现有 Key)」精确比对取代
 // Contains("***") 内容特征——部分上游网关的自定义凭证可能字面含 ***，内容特征会误判：
 // 更新场景静默把用户修改的 Key 恢复成旧值、恢复不到 id 时整行静默丢弃，排查困难。
 func maskedRestoreByKeyID(submitted, id string, saved []config.ProviderAPIKey) (string, bool) {
@@ -206,7 +206,7 @@ func applyPayload(p *config.Provider, body *providerPayload, isCreate bool) {
 		p.Enabled = true
 	}
 	// API Keys：脱敏回显值按 id 恢复完整值
-	// v1.8.4（A9）：精确比对取代 Contains("***") 内容特征（真实上游 Key 可能字面含 ***）
+	// v1.0.0（A9）：精确比对取代 Contains("***") 内容特征（真实上游 Key 可能字面含 ***）
 	oldKeys := p.APIKeys
 	keys := []config.ProviderAPIKey{}
 	for _, k := range body.APIKeys {
@@ -401,10 +401,10 @@ type testRespView struct {
 
 // testOneKey 用指定的 base_url、请求头与 Key 对单个 Key 发起测试（结果不含 key_id/masked_key，由调用方填充）。
 // 按供应商接口类型（api_type）选择测试请求格式与端点。
-// v1.8.4（A10）：max_tokens 从 4096 降到 16——连通性测试目的是验证鉴权与端点可达，
+// v1.0.0（A10）：max_tokens 从 4096 降到 16——连通性测试目的是验证鉴权与端点可达，
 // 4096 允许模型生成最多 4096 输出 token，全部计入上游账单；50 条 Key 串行测试时
 // 副作用×50（主流网关对 max_tokens=1 也能通过校验，16 留有裕量）。
-// v1.8.4（A2）：接收 ctx——由调用方的整体时间预算控制，超时后剩余 Key 不再发请求。
+// v1.0.0（A2）：接收 ctx——由调用方的整体时间预算控制，超时后剩余 Key 不再发请求。
 func (s *Server) testOneKey(ctx context.Context, apiType, baseURL string, headers []config.ProviderHeader, key, model, testMsg string, client *http.Client) testResult {
 	apiType = convert.NormalizeAPIType(apiType)
 	var reqBody []byte
@@ -433,7 +433,7 @@ func (s *Server) testOneKey(ctx context.Context, apiType, baseURL string, header
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	convert.SetAuthHeaders(req.Header, apiType, key)
-	// v1.8.6：全局默认 UA 先于供应商自定义头应用（后者可覆盖）；
+	// v1.0.0：全局默认 UA 先于供应商自定义头应用（后者可覆盖）；
 	// 背景：腾讯元宝 bot 等网关对 Go 默认 UA 返回 403，测试 Key 与真实转发同口径
 	convert.SetDefaultUserAgent(req.Header, s.State.Snap().DefaultUserAgent)
 	for _, h := range headers {
@@ -529,7 +529,7 @@ func (s *Server) handleProviderTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "基础地址不能为空", "invalid_request")
 		return
 	}
-	// v1.8.4（A11）：与 CRUD 表单校验同口径——非法前缀延迟到 client.Do 才以
+	// v1.0.0（A11）：与 CRUD 表单校验同口径——非法前缀延迟到 client.Do 才以
 	// 原始传输层错误失败，提示不友好且两套口径不一致
 	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 		writeErr(w, http.StatusBadRequest, "基础地址需以 http:// 或 https:// 开头", "invalid_request")
@@ -561,7 +561,7 @@ func (s *Server) handleProviderTest(w http.ResponseWriter, r *http.Request) {
 		if id == "" {
 			id = fmt.Sprintf("key-%d", i)
 		}
-		// v1.8.4（A9）：提交值恰为现有 Key 的脱敏值时视为未修改，恢复完整值；
+		// v1.0.0（A9）：提交值恰为现有 Key 的脱敏值时视为未修改，恢复完整值；
 		// 否则按新输入处理（真实 Key 含 *** 不再被误恢复/误跳过）
 		if saved != nil {
 			if full, ok := maskedRestoreByKeyID(key, k.ID, saved.APIKeys); ok {
@@ -579,7 +579,7 @@ func (s *Server) handleProviderTest(w http.ResponseWriter, r *http.Request) {
 	if testMsg == "" {
 		testMsg = "hi"
 	}
-	// v1.8.3（L12）：单次测试 Key 数量上限——测试串行执行且每 Key 超时 120s，
+	// v1.0.0（L12）：单次测试 Key 数量上限——测试串行执行且每 Key 超时 120s，
 	// 不设上限时 8MB 请求体内可塞入大量 Key 目标把请求挂数分钟。
 	const maxTestTargets = 50
 	if len(targets) > maxTestTargets {
@@ -589,7 +589,7 @@ func (s *Server) handleProviderTest(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Timeout: 120 * time.Second}
 	results := make([]testResult, 0, len(targets))
-	// v1.8.4（A2）：整体时间预算——上限 50 × 单 Key 120s 的最坏组合约 100 分钟，
+	// v1.0.0（A2）：整体时间预算——上限 50 × 单 Key 120s 的最坏组合约 100 分钟，
 	// 远超 L12 注释自述的「挂数分钟」目标；以 r.Context() 派生 10 分钟总预算，
 	// 超预算后剩余 Key 直接标记跳过（客户端断开同样会提前终止进行中的请求）。
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
@@ -626,7 +626,7 @@ func parseModelsResponse(body []byte) []string {
 		} else if d, ok := v["models"].([]interface{}); ok {
 			arr = d
 		}
-		// v1.8.2（C2）：移除无效的 `v["data"].(map)` 死分支（原实现仅 `_ = d`，无任何效果）
+		// v1.0.0（C2）：移除无效的 `v["data"].(map)` 死分支（原实现仅 `_ = d`，无任何效果）
 	}
 	seen := map[string]bool{}
 	out := []string{}
@@ -652,7 +652,7 @@ func parseModelsResponse(body []byte) []string {
 	return out
 }
 
-// v1.8.5（G5，关联检查报告 B1）：接收 ctx——调用方可施加整体预算、随客户端
+// v1.0.0（G5，关联检查报告 B1）：接收 ctx——调用方可施加整体预算、随客户端
 // 断开取消；原实现 NewRequest 不带 ctx，仅靠 per-request 超时兜底，串行多 Key
 // 尝试时整体时长无上界。
 func fetchUpstreamModels(ctx context.Context, apiType, baseURL string, headers []config.ProviderHeader, key, defaultUA string, timeout time.Duration) ([]string, error) {
@@ -663,7 +663,7 @@ func fetchUpstreamModels(ctx context.Context, apiType, baseURL string, headers [
 	}
 	req.Header.Set("Accept", "application/json")
 	convert.SetAuthHeaders(req.Header, apiType, key)
-	// v1.8.6：全局默认 UA（供应商自定义头可覆盖），与 testOneKey/newUpstreamRequest 同口径
+	// v1.0.0：全局默认 UA（供应商自定义头可覆盖），与 testOneKey/newUpstreamRequest 同口径
 	convert.SetDefaultUserAgent(req.Header, defaultUA)
 	for _, h := range headers {
 		if h.Key != "" {
@@ -700,7 +700,7 @@ func (s *Server) handleFetchModelsByID(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "该供应商尚未配置 API Key", "invalid_request")
 		return
 	}
-	// v1.8.5（G5）：随请求 ctx 取消（客户端断开即终止，不再依赖 60s 超时兜底）
+	// v1.0.0（G5）：随请求 ctx 取消（客户端断开即终止，不再依赖 60s 超时兜底）
 	models, err := fetchUpstreamModels(r.Context(), p.APIType, p.BaseURL, p.Headers, p.APIKeys[0].Key, s.State.Snap().DefaultUserAgent, 60*time.Second)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "获取模型失败："+err.Error(), "fetch_models_failed")
@@ -710,7 +710,7 @@ func (s *Server) handleFetchModelsByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleFetchModelsForm POST /api/providers/fetch-models
-// 表单模式（新增页 / 编辑页统一，v1.8.3 F1）：使用表单当前填写的数据，按顺序依次尝试各 Key。
+// 表单模式（新增页 / 编辑页统一，v1.0.0 F1）：使用表单当前填写的数据，按顺序依次尝试各 Key。
 // 编辑页表单中的 Key 为脱敏值（含 ***），按 provider_id + key id 从已保存配置恢复完整值
 // （与 /api/providers/test 同模式）；无法恢复的跳过。
 func (s *Server) handleFetchModelsForm(w http.ResponseWriter, r *http.Request) {
@@ -733,12 +733,12 @@ func (s *Server) handleFetchModelsForm(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "基础地址不能为空", "invalid_request")
 		return
 	}
-	// v1.8.4（A11）：与 CRUD 表单校验同口径
+	// v1.0.0（A11）：与 CRUD 表单校验同口径
 	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 		writeErr(w, http.StatusBadRequest, "基础地址需以 http:// 或 https:// 开头", "invalid_request")
 		return
 	}
-	// v1.8.4（M9）：Key 数量上限——与 handleProviderTest 的 L12 同口径；不设上限时 8MB
+	// v1.0.0（M9）：Key 数量上限——与 handleProviderTest 的 L12 同口径；不设上限时 8MB
 	// 请求体内可塞入约十余万条 Key 目标（每条约 40-50 字节 JSON），串行尝试（每条
 	// 60s 超时）可把请求挂起数天；L12 只给测试接口加了上限，此处漏做。
 	const maxFetchKeys = 50
@@ -752,8 +752,8 @@ func (s *Server) handleFetchModelsForm(w http.ResponseWriter, r *http.Request) {
 	if body.ProviderID != "" {
 		saved = s.State.FindProvider(body.ProviderID)
 	}
-	// v1.8.5（G5，关联检查报告 B1）：整体时间预算——表单模式串行尝试至多 50 Key、
-	// 每 Key 60s 超时，最坏可挂起约 50 分钟，与 handleProviderTest 的 v1.8.4（A2）
+	// v1.0.0（G5，关联检查报告 B1）：整体时间预算——表单模式串行尝试至多 50 Key、
+	// 每 Key 60s 超时，最坏可挂起约 50 分钟，与 handleProviderTest 的 v1.0.0（A2）
 	// 预算不对称；以 r.Context() 派生 10 分钟总预算，超预算后停止尝试剩余 Key
 	//（客户端断开同样会提前终止进行中的请求）。
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
@@ -764,7 +764,7 @@ func (s *Server) handleFetchModelsForm(w http.ResponseWriter, r *http.Request) {
 		if key == "" {
 			continue
 		}
-		// v1.8.4（A9）：提交值恰为现有 Key 的脱敏值时视为未修改，恢复完整值；
+		// v1.0.0（A9）：提交值恰为现有 Key 的脱敏值时视为未修改，恢复完整值；
 		// 否则按新输入处理（真实 Key 含 *** 不再被误跳过）
 		if saved != nil {
 			if full, ok := maskedRestoreByKeyID(key, k.ID, saved.APIKeys); ok {
@@ -793,7 +793,7 @@ func (s *Server) handleFetchModelsForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // truncateStr 按字节上限截断字符串，附加 "..." 标记。
-// v1.8.3（L11）：截断点回退到最近的 UTF-8 字符边界——与 proxy 包 truncate 的 C5 修复同口径，
+// v1.0.0（L11）：截断点回退到最近的 UTF-8 字符边界——与 proxy 包 truncate 的 C5 修复同口径，
 // 上游错误消息含中文时不再截出乱码尾字节。
 func truncateStr(s string, n int) string {
 	if len(s) <= n {

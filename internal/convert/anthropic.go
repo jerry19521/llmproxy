@@ -1,4 +1,4 @@
-// anthropic.go：Anthropic Messages API 格式（/v1/messages）的 IR 解析与构建。
+﻿// anthropic.go：Anthropic Messages API 格式（/v1/messages）的 IR 解析与构建。
 package convert
 
 import (
@@ -98,7 +98,7 @@ func parseAnthropicRequest(body []byte) (*RequestIR, error) {
 			}
 			ir.Messages = append(ir.Messages, msg)
 		default: // user
-			// v1.7.6 L11 修复：按块原始顺序交错展开文本段与 tool_result（旧实现 toolMsgs 先行缓冲，
+			// v1.0.0 L11 修复：按块原始顺序交错展开文本段与 tool_result（旧实现 toolMsgs 先行缓冲，
 			// 会把同一消息内 [text, tool_result] 重排为 [tool_result, text]）；
 			// 后续构建阶段相邻同角色自动合并，最终块序与输入一致
 			var seq []InputMessage
@@ -119,7 +119,7 @@ func parseAnthropicRequest(body []byte) (*RequestIR, error) {
 				switch b.Type {
 				case "text":
 					curText.WriteString(b.Text)
-					// v1.8.4（H1）：text 块同时进 Parts——IR 不变式为「Parts 非空时 Parts 覆盖
+					// v1.0.0（H1）：text 块同时进 Parts——IR 不变式为「Parts 非空时 Parts 覆盖
 					// 全部内容」（CC/Responses 解析器均如此），否则构建层 Parts 优先会静默丢弃文本：
 					// Anthropic 图文混排消息 [text, image] 转到 OpenAI/Responses 上游时，
 					// 用户的问题本身没发给模型，回答完全跑偏且无任何日志提示。
@@ -177,7 +177,7 @@ func parseAnthropicSystem(raw json.RawMessage) string {
 type antBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
-	// thinking 块（v1.8.4 M6）：思考内容；signature 跨格式不可重建，解析时丢弃
+	// thinking 块（v1.0.0 M6）：思考内容；signature 跨格式不可重建，解析时丢弃
 	Thinking string `json:"thinking"`
 	// tool_use（assistant）
 	ID    string          `json:"id"`
@@ -252,7 +252,7 @@ func buildAnthropicRequest(ir *RequestIR, model string) ([]byte, error) {
 		m["tools"] = tools
 		// tool_choice 省略时 Anthropic 默认 auto；
 		// OpenAI 的 "none" 无直接对应（旧实现直译 {"type":"none"}，
-		// Anthropic 官方不支持该取值会 400，v1.7.6 L11 修复为省略字段回退默认 auto）
+		// Anthropic 官方不支持该取值会 400，v1.0.0 L11 修复为省略字段回退默认 auto）
 		if tc := anthropicToolChoiceValue(ir.ToolChoice); tc != nil {
 			m["tool_choice"] = tc
 		}
@@ -345,7 +345,7 @@ func anthropicToolChoiceValue(tc *ToolChoice) interface{} {
 	}
 	switch tc.Type {
 	case "none":
-		// Anthropic 官方 tool_choice 不支持 none：省略字段回退默认 auto（v1.7.6 L11 修复）
+		// Anthropic 官方 tool_choice 不支持 none：省略字段回退默认 auto（v1.0.0 L11 修复）
 		return nil
 	case "any":
 		return map[string]string{"type": "any"}
@@ -393,7 +393,7 @@ func parseAnthropicResponse(body []byte) (*ResponseIR, error) {
 		case "text":
 			texts = append(texts, b.Text)
 		case "thinking":
-			// v1.8.4（M6）：extended thinking 块归一入 Reasoning 通道；
+			// v1.0.0（M6）：extended thinking 块归一入 Reasoning 通道；
 			// redacted_thinking（加密思考）无法转文本，跳过
 			if b.Thinking != "" {
 				reasons = append(reasons, b.Thinking)
@@ -419,7 +419,7 @@ func buildAnthropicResponse(ir *ResponseIR, model string) []byte {
 		model = ir.Model
 	}
 	content := []map[string]interface{}{}
-	// v1.8.4（M6）：思考内容前置 thinking 块——signature 跨格式不可重建（留空，
+	// v1.0.0（M6）：思考内容前置 thinking 块——signature 跨格式不可重建（留空，
 	// 客户端展示用途不校验；客户端回传历史时我们的请求解析器忽略 thinking 块，
 	// 不会携带无效 signature 回上游）。
 	if ir.Reasoning != "" {

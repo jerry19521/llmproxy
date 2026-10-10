@@ -1,6 +1,6 @@
-package convert
+﻿package convert
 
-// v1.8.4 第三轮全量审查回归测试（audit3）：
+// v1.0.0 第三轮全量审查回归测试（audit3）：
 // 复现并固化以下修复——
 //   H1  Anthropic 图文混排 user 消息跨格式转换文本丢失
 //   M4  SSE 混合行尾事件按分隔符类型而非位置切割，批量丢事件

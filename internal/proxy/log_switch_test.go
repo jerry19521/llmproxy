@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"net/http"
@@ -11,7 +11,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.8.1 回归：日志记录开关（log.enabled，默认关闭）。
+// v1.0.0 回归：日志记录开关（log.enabled，默认关闭）。
 // - 关闭：成功调用 / 失败调用 / 模型未匹配均不写日志（writeSuccessLog /
 //   writeFailureLog / writeModelNotFoundLog 三路径全覆盖）；
 // - 开启：各路径恢复写入；

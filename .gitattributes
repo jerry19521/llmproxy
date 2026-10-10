@@ -1,0 +1,64 @@
+# .gitattributes - force consistent line endings across the codebase
+# Standard Go/web project: LF everywhere, except Windows batch scripts (CRLF native)
+
+# Default: detect text automatically, normalize to LF
+* text=auto eol=lf
+
+# Shell scripts (LF)
+*.sh        text eol=lf
+
+# Windows batch scripts (CRLF, native to cmd.exe)
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=lf
+
+# Source code (LF, cross-platform standard)
+*.go        text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.ts        text eol=lf
+*.jsx       text eol=lf
+*.tsx       text eol=lf
+*.html      text eol=lf
+*.htm       text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.sass      text eol=lf
+*.less      text eol=lf
+
+# Docs and config (LF)
+*.md        text eol=lf
+*.txt       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.xml       text eol=lf
+*.ini       text eol=lf
+*.cfg       text eol=lf
+*.conf      text eol=lf
+
+# Build / config files at root
+.gitattributes   text eol=lf
+.gitignore       text eol=lf
+LICENSE          text eol=lf
+Makefile         text eol=lf
+Dockerfile       text eol=lf
+
+# Binary assets (no conversion)
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.svg   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.exe   binary
+*.dll   binary
+*.so    binary
+*.dylib binary

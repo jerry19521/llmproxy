@@ -1,4 +1,4 @@
-// ===== 调用日志内容解析引擎（v1.8.0） =====
+﻿// ===== 调用日志内容解析引擎（v1.0.0） =====
 // 纯函数模块：将日志记录的请求体 / 响应体（含 SSE 流）解析为结构化中间表示，
 // 不操作 DOM；渲染由 views-logs.js 完成。覆盖三种接口格式：
 //   cc        OpenAI Chat Completions（/v1/chat/completions）
@@ -98,7 +98,7 @@ const LogParser = (() => {
   // ---------- 格式识别 ----------
 
   // URL 路径优先；body 结构兜底。四组方向数据各自独立调用（跨格式时两侧格式不同）。
-  // v1.8.4（F5）：末段精确匹配优先——includes 子串顺序匹配会被 base_url 干扰
+  // v1.0.0（F5）：末段精确匹配优先——includes 子串顺序匹配会被 base_url 干扰
   //（如 Anthropic 供应商 base_url 含 /responses 子串时，完整上游 URL 会先命中
   // responses 分支误判，且 URL 命中后无帧内容兜底）；末段匹配覆盖正常场景，
   // 子串 includes 仅作兕底。
@@ -130,7 +130,7 @@ const LogParser = (() => {
   function guessFormatFromJSON(obj) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 'unknown';
     if (Array.isArray(obj.choices)) return 'cc';
-    // v1.8.4（F4）：Responses 的 input 允许纯字符串（单条 user 文本，与代理后端解析器同步），
+    // v1.0.0（F4）：Responses 的 input 允许纯字符串（单条 user 文本，与代理后端解析器同步），
     // URL 缺失的旧日志/未发上游的失败记录只能靠 JSON 兕底猜测时不再落入 unknown
     if (Array.isArray(obj.output) || Array.isArray(obj.input) || typeof obj.input === 'string' || 'instructions' in obj) return 'responses';
     if (obj.type === 'message' && Array.isArray(obj.content)) return 'anthropic';
@@ -568,7 +568,7 @@ const LogParser = (() => {
         case 'message_start': {
           const m = d.message || {};
           id = m.id || id; model = m.model || model;
-          // v1.8.4（F3）：全量拷贝 usage——此前仅取两字段会丢弃
+          // v1.0.0（F3）：全量拷贝 usage——此前仅取两字段会丢弃
           // cache_creation_input_tokens / cache_read_input_tokens 等缓存统计字段，
           // normalizeUsage 的未知字段兜底可将它们如实展示
           if (m.usage) usage = Object.assign({}, m.usage);
@@ -748,7 +748,7 @@ const LogParser = (() => {
     return out;
   }
 
-  // ---------- v1.8.2：调用详情数据源判定（B2 修复）----------
+  // ---------- v1.0.0：调用详情数据源判定（B2 修复）----------
 
   // isV18Log 判定日志是否为 v1.7.5 之后的新结构（含 upstream_url / client_resp_status 字段）。
   // 旧数据（v1.7.5 之前）无这些字段：client_resp_body 列不存在、resp_body 本就是发给客户端的字节，
@@ -767,7 +767,7 @@ const LogParser = (() => {
   }
 
   return {
-    version: '1.8.2',
+    version: '1.0.0',
     FORMAT_LABELS,
     isTruncated,
     isV18Log,

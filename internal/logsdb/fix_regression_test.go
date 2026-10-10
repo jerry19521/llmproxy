@@ -1,4 +1,4 @@
-package logsdb
+﻿package logsdb
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 // TestWriteAsyncCloseNoPanic H1 回归：WriteAsync 与 Close 并发交错不得 panic。
 // 旧实现「锁内读 closed + 锁外 send」对「锁内置位 + 锁外 close(ch)」存在固有竞态
 // （send on closed channel panic，select+default 无法规避），服务优雅关闭/
-// 日志库热切换时几乎每轮可复现；v1.7.6 改为 quit/done 信号对 + 锁内 send。
+// 日志库热切换时几乎每轮可复现；v1.0.0 改为 quit/done 信号对 + 锁内 send。
 func TestWriteAsyncCloseNoPanic(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "h1.db")
 	const rounds = 10

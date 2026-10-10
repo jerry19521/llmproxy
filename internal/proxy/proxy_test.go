@@ -1,4 +1,4 @@
-// proxy_test.go：输出速率与生成耗时计算单元测试。
+﻿// proxy_test.go：输出速率与生成耗时计算单元测试。
 package proxy
 
 import (
@@ -30,7 +30,7 @@ func TestOutputTokensPerSecond(t *testing.T) {
 }
 
 func TestGenerationMs(t *testing.T) {
-	// 口径（v1.7.5）：流式 = 末字节 - 上游首字节（模型实际吐字窗口）；
+	// 口径（v1.0.0）：流式 = 末字节 - 上游首字节（模型实际吐字窗口）；
 	// 非流式 = 整个请求耗时；流式异常（无首字节/末字节早于首字节）回退总耗时。
 	cases := []struct {
 		name                           string
@@ -56,7 +56,7 @@ func TestGenerationMs(t *testing.T) {
 	}
 }
 
-// TestMaskAuthHeaders 上游请求头认证字段脱敏（v1.7.5 日志结构）。
+// TestMaskAuthHeaders 上游请求头认证字段脱敏（v1.0.0 日志结构）。
 func TestMaskAuthHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")

@@ -1,4 +1,4 @@
-package logsdb
+﻿package logsdb
 
 import (
 	"fmt"
@@ -37,7 +37,7 @@ func totalSize(paths ...string) int64 {
 	return sum
 }
 
-// TestCountAndRecreate v1.8.1 回归：Count 行数统计 + Recreate 删除库文件重建——
+// TestCountAndRecreate v1.0.0 回归：Count 行数统计 + Recreate 删除库文件重建——
 // 新库为空且可继续写入、旧数据全部消失、磁盘空间实际释放（重建后文件远小于重建前）。
 func TestCountAndRecreate(t *testing.T) {
 	dir := t.TempDir()

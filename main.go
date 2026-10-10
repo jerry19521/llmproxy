@@ -1,4 +1,4 @@
-// LLMProxy 大模型代理工具。
+﻿// LLMProxy 大模型代理工具。
 // 统一管理各供应商的大模型服务：代理转发、身份认证、路由与熔断、调用日志与管理界面。
 package main
 
@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var buildVersion = "1.8.6"
+var buildVersion = "1.0.0"
 
 func main() {
 	configPath := flag.String("config", "config.yml", "配置文件路径")
@@ -74,12 +74,12 @@ func main() {
 	apiServer := &api.Server{Mgr: mgr, State: state, Listen: fmt.Sprintf("%s:%d", listenCfg.Host, listenCfg.Port)}
 	apiServer.SetLogStore(logStore)
 
-	// 日志库切换器（v1.8.2，B1 修复）：logStore 变量被三条路径并发读写——
+	// 日志库切换器（v1.0.0，B1 修复）：logStore 变量被三条路径并发读写——
 	// 设置页改日志路径（OnLogPathChange，API 请求 goroutine）、清空日志重建
 	//（OnLogRecreate，API 请求 goroutine）、配置热加载路径切换（Watch 后台
 	// goroutine）。本切换器用独立互斥将三条路径对 logStore 的读-改-写串行化，
 	// 消除数据竞态与 store 引用交错；api 层 logOpMu 另将三条路径与日志查询
-	// 互斥（v1.8.5 G1/G2：查询读锁内取引用，设置页 / 清空 / 热加载均持写锁）。
+	// 互斥（v1.0.0 G1/G2：查询读锁内取引用，设置页 / 清空 / 热加载均持写锁）。
 	logSw := newLogStoreSwitcher(logStore, func(ns *logsdb.LogStore) {
 		proxyHandler.SetLogStore(ns)
 		apiServer.SetLogStore(ns)
@@ -93,7 +93,7 @@ func main() {
 		state.Reload()
 		fmt.Printf("[hot-reload] 配置已重新加载\n")
 		if state.Snap().LogDBPath != oldLogPath {
-			// v1.8.5（G2）补全：热加载路径切换改经 api 层持锁入口——旧实现直接调
+			// v1.0.0（G2）补全：热加载路径切换改经 api 层持锁入口——旧实现直接调
 			// logSw.changePath 绕过 logOpMu，切换与日志查询零互斥（查询持旧引用报
 			// database is closed 瞬态 500）；与设置页 / 清空两条路径统一在同一把锁下。
 			_ = apiServer.SwitchLogPathLocked(state.Snap().LogDBPath)
@@ -201,7 +201,7 @@ func spaHandler() http.Handler {
 	})
 }
 
-// ===== 日志库切换器（v1.8.2，B1 修复）=====
+// ===== 日志库切换器（v1.0.0，B1 修复）=====
 
 // logStoreSwitcher 管理运行态日志库的切换互斥：logStore 变量被三条路径并发读写——
 // 设置页改日志路径（OnLogPathChange，API 请求 goroutine）、清空日志重建
@@ -236,9 +236,9 @@ func (s *logStoreSwitcher) changePath(newPath string) error {
 	return nil
 }
 
-// recreate 清空日志：删除库文件并原路径重建空库，磁盘空间即时释放（v1.8.1）；
-// v1.8.3：与路径热更共用同一互斥——清空与路径切换不再可能交错重建/删除对方的库。
-// v1.8.3（M1）：重建失败时自愈兜底——logsdb.Recreate 内部先关旧库再重建，若 Open
+// recreate 清空日志：删除库文件并原路径重建空库，磁盘空间即时释放（v1.0.0）；
+// v1.0.0：与路径热更共用同一互斥——清空与路径切换不再可能交错重建/删除对方的库。
+// v1.0.0（M1）：重建失败时自愈兜底——logsdb.Recreate 内部先关旧库再重建，若 Open
 // 失败（磁盘满、路径被占用等）返回错误，旧 store 已关闭：proxy 写日志静默丢弃、
 // 管理端查询全部 500，且无自动恢复路径。此处在返回错误前尝试原路径重新打开空库
 // 恢复日志子系统；自愈也失败才真正返回错误（需重启）。

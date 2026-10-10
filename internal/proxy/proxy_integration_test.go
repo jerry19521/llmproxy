@@ -1,4 +1,4 @@
-// proxy_integration_test.go：跨格式代理转发的集成测试。
+﻿// proxy_integration_test.go：跨格式代理转发的集成测试。
 // 使用 httptest 模拟三种格式的上游供应商，验证 3 客户端格式 × 3 供应商类型的全部组合、
 // 流式合成、工具调用转换、认证兼容（x-api-key）、错误格式与 /v1/models。
 package proxy
@@ -322,7 +322,7 @@ func newTestStack(t *testing.T, upstreamURL string) (*Handler, *core.State, *con
 			ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true,
 			IPWhitelist: []string{"*"}, Models: []string{},
 		}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -731,7 +731,7 @@ func TestLogWrittenWithUsage(t *testing.T) {
 			Models:  []config.ProviderModel{{Name: "m-anthropic"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -846,7 +846,7 @@ func TestStreamingGenerationRate(t *testing.T) {
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -931,7 +931,7 @@ func TestFakeStreamingRate(t *testing.T) {
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1122,7 +1122,7 @@ func TestCooldownRetryThreshold(t *testing.T) {
 	}
 }
 
-// ===== 流式实时转发（v1.7.0：stream=true 边收边转发）=====
+// ===== 流式实时转发（v1.0.0：stream=true 边收边转发）=====
 
 // startSlowStreamUpstream 启动慢速流式 mock 上游（openai 格式）：
 // TTFT 200ms，之后每 300ms 一帧，共 3 帧 text + finish，总时长约 1100ms+。
@@ -1275,7 +1275,7 @@ func TestStreamFirstEventErrorRetry(t *testing.T) {
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1330,7 +1330,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1364,7 +1364,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 	if l.Status != "failure" {
 		t.Fatalf("客户端断开应记 failure: %+v", l)
 	}
-	// v1.7.1 起，客户端断开在流转发阶段产生的错误被统一归类：
+	// v1.0.0 起，客户端断开在流转发阶段产生的错误被统一归类：
 	// watchdog 关闭上游 Body → "客户端断开"；或写入先失败 → "写入客户端失败: ..."。
 	if l.ErrorMsg == nil {
 		t.Fatalf("客户端断开后日志应有错误信息: %+v", l)
@@ -1400,7 +1400,7 @@ func TestCoolingDownLogConsistency(t *testing.T) {
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 		ns.CooldownEnabled = true
 		ns.CooldownSeconds = 60
 		ns.CooldownRetryCount = 1

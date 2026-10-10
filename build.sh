@@ -46,7 +46,7 @@ fi
 
 # ---- 检查 go ----
 if ! command -v go >/dev/null 2>&1; then
-  echo "[错误] 未找到 go 命令，请先安装 Go 1.22+ 并加入 PATH"
+  echo "[错误] 未找到 go 命令，请先安装 Go 1.26.5+ 并加入 PATH"
   exit 1
 fi
 

@@ -1,4 +1,4 @@
-// Package core 维护代理运行时状态：供应商与代理 Key 的内存快照、模型别名解析、
+﻿// Package core 维护代理运行时状态：供应商与代理 Key 的内存快照、模型别名解析、
 // 路由策略（随机/轮询/加权）、失败熔断冷却池。
 // 架构：config.Manager 是配置文件权威（读写 yml）；State 提供 copy-on-write
 // 不可变快照供代理数据面无锁读取；所有写操作经 State.Mutate 同步内存与 yml。
@@ -27,10 +27,10 @@ type Snapshot struct {
 	CooldownRetryCount     int
 	UpstreamTimeoutSeconds int
 	TestMessage            string
-	DefaultUserAgent       string // 发往上游的默认 User-Agent（v1.8.6）：空=不设置（Go 默认）；供应商自定义头优先
+	DefaultUserAgent       string // 发往上游的默认 User-Agent（v1.0.0）：空=不设置（Go 默认）；供应商自定义头优先
 	IPTrustLevel           int
 	LogDBPath              string
-	LogEnabled             bool // 是否记录新的调用日志（v1.8.1）：false 时代理不写日志，已有日志仍可查询
+	LogEnabled             bool // 是否记录新的调用日志（v1.0.0）：false 时代理不写日志，已有日志仍可查询
 }
 
 // CooldownItem 冷却池条目。
@@ -167,7 +167,7 @@ func (p *CooldownPool) List(providerName func(id string) string) []CooldownItem 
 		}
 		parts := strings.SplitN(k, "|", 2)
 		if len(parts) != 2 {
-			continue // v1.8.2（C3）：防御顺序修正——先判长再取值，畸形键不 panic
+			continue // v1.0.0（C3）：防御顺序修正——先判长再取值，畸形键不 panic
 		}
 		item := CooldownItem{ProviderID: parts[0], Model: parts[1], Until: until}
 		if providerName != nil {
@@ -275,7 +275,7 @@ func (ns *Snapshot) snapToConfig(cfg *config.Config) {
 func (s *State) Mutate(mutator func(*Snapshot)) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	// v1.8.4（M7）：保存前吸收外部编辑的配置变更——外部编辑落盘后、Watch 下一
+	// v1.0.0（M7）：保存前吸收外部编辑的配置变更——外部编辑落盘后、Watch 下一
 	// tick（≤2 秒）之前的窗口内执行界面保存，旧实现基于内存旧快照全量写盘，
 	// 会把外部变更静默覆盖且 lastMod 随之对齐（Watch 永远检测不到，完全丢失）。
 	// 吸收后 Reload 重建快照，本次界面变更叠加在外部变更之上。
@@ -505,7 +505,7 @@ func (s *State) FindProxyKey(key string) *config.ProxyKey {
 	return nil
 }
 
-// MaskKey 脱敏：前 3 位 + *** + 后 3 位；短 Key（≤10 字符）只保留前 3 位（v1.8.3，L8 修复）。
+// MaskKey 脱敏：前 3 位 + *** + 后 3 位；短 Key（≤10 字符）只保留前 3 位（v1.0.0，L8 修复）。
 // 旧实现按 `key[:3] + "***" + key[4:]` 对 7 字符 Key 会泄露 6/7 字符（后 3 与前 3 重叠）；
 // 供应商上游 Key 长度由用户配置不受控，短 Key 仅保留前缀维持列表区分度、不再暴露尾部。
 func MaskKey(key string) string {

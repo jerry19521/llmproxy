@@ -1,4 +1,4 @@
-// Package auth 提供管理员 JWT 认证、密码校验、代理 Key 的 IP 白名单匹配与来源 IP 提取。
+﻿// Package auth 提供管理员 JWT 认证、密码校验、代理 Key 的 IP 白名单匹配与来源 IP 提取。
 package auth
 
 import (
@@ -95,7 +95,7 @@ func VerifyToken(token, secret, passwordHash string) (string, error) {
 	if claims.Exp < time.Now().Unix() {
 		return "", ErrTokenExpired
 	}
-	// v1.8.4（S10）：改用常量时间比较——旧实现的 != 短路比较与同文件
+	// v1.0.0（S10）：改用常量时间比较——旧实现的 != 短路比较与同文件
 	// ConstantTimeEquals 的防护基调不一致，理论上可计时探测摘要字节。
 	if !ConstantTimeEquals(claims.Password, shortHash(secret, passwordHash)) {
 		return "", ErrTokenInvalid
@@ -104,7 +104,7 @@ func VerifyToken(token, secret, passwordHash string) (string, error) {
 }
 
 // shortHash 生成密码哈希的绑定摘要（密码修改后旧 token 失效的判定依据）。
-// v1.8.4（S15）：改用 HMAC-SHA256(secret) 参与派生——旧实现为裸 SHA-256，
+// v1.0.0（S15）：改用 HMAC-SHA256(secret) 参与派生——旧实现为裸 SHA-256，
 // token 泄漏后攻击者可用单次 SHA-256 对密码猜测做快速验证（每秒千万级），
 // 把 bcrypt（每秒千级）降级为可快筛的等价物；secret 参与派生后快筛通道失效。
 // 注意：摘要算法变更使升级前签发的旧 token 全部失效（重新登录一次即可）。
@@ -192,7 +192,7 @@ func MatchIPWhitelist(ip string, whitelist []string) bool {
 	if len(whitelist) == 0 {
 		return false
 	}
-	// v1.8.4（S11）：来源在 ip_trust_level≥1 时可来自不受控的 XFF——非 IP 字符串
+	// v1.0.0（S11）：来源在 ip_trust_level≥1 时可来自不受控的 XFF——非 IP 字符串
 	//（如 "10.1.bypass"）不得命中前缀规则，超出白名单「匹配 IP」的本意。
 	ipNorm, ipValid := normalizeIP(ip)
 	for _, rule := range whitelist {

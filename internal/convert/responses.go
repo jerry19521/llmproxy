@@ -1,4 +1,4 @@
-// responses.go：OpenAI Responses API 格式（/v1/responses）的 IR 解析与构建。
+﻿// responses.go：OpenAI Responses API 格式（/v1/responses）的 IR 解析与构建。
 package convert
 
 import (
@@ -282,7 +282,7 @@ func buildResponsesInput(ir *RequestIR) []map[string]interface{} {
 				appended := false
 				if len(msg.Parts) > 0 {
 					for _, p := range msg.Parts {
-						// v1.8.4（C7）：空 text 片段跳过，避免产出 {"type":"output_text","text":""}
+						// v1.0.0（C7）：空 text 片段跳过，避免产出 {"type":"output_text","text":""}
 						if p.Text != "" {
 							content = append(content, map[string]interface{}{"type": "output_text", "text": p.Text})
 							appended = true
@@ -309,11 +309,11 @@ func buildResponsesInput(ir *RequestIR) []map[string]interface{} {
 						content = append(content, map[string]interface{}{
 							"type": "input_image", "image_url": imageDataURL(p),
 						})
-					} else if p.Text != "" { // v1.8.4（C7）：空 text 片段跳过
+					} else if p.Text != "" { // v1.0.0（C7）：空 text 片段跳过
 						content = append(content, map[string]interface{}{"type": "input_text", "text": p.Text})
 					}
 				}
-				// v1.8.4（C7）：全被过滤时回退 Text，避免产出空 content 数组
+				// v1.0.0（C7）：全被过滤时回退 Text，避免产出空 content 数组
 				if len(content) > 0 {
 					out = append(out, map[string]interface{}{"role": "user", "content": content})
 				} else {
@@ -363,7 +363,7 @@ func parseResponsesResponse(body []byte) (*ResponseIR, error) {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			// v1.8.5（G4，关联检查报告 A4）：官方 reasoning 条目常仅以 summary 数组承载
+			// v1.0.0（G4，关联检查报告 A4）：官方 reasoning 条目常仅以 summary 数组承载
 			// 思考摘要（content 为显式开启输出模式后的新增通道），此前未解析导致静默丢失。
 			Summary []struct {
 				Type string `json:"type"`
@@ -404,7 +404,7 @@ func parseResponsesResponse(body []byte) (*ResponseIR, error) {
 				}
 			}
 		case "reasoning":
-			// v1.8.4（M6）：推理条目（content 内 reasoning_text/summary_text）归一入 Reasoning 通道
+			// v1.0.0（M6）：推理条目（content 内 reasoning_text/summary_text）归一入 Reasoning 通道
 			got := 0
 			for _, c := range item.Content {
 				if c.Type == "reasoning_text" || c.Type == "summary_text" {
@@ -412,7 +412,7 @@ func parseResponsesResponse(body []byte) (*ResponseIR, error) {
 					got++
 				}
 			}
-			// v1.8.5（G4）：content 通道优先；本条目 content 无可命中条目时兜底读取
+			// v1.0.0（G4）：content 通道优先；本条目 content 无可命中条目时兜底读取
 			// summary 通道（官方非流式响应 reasoning 的常见形态，仅 summary 数组）。
 			// 判定按条目独立进行：前序条目已命中不影响本条目兜底。
 			if got == 0 {
@@ -455,7 +455,7 @@ func buildResponsesResponse(ir *ResponseIR, model string) []byte {
 		created = nowUnix()
 	}
 	output := []map[string]interface{}{}
-	// v1.8.4（M6）：思考内容前置 reasoning 条目（官方结构：summary 可空数组 + content 内 reasoning_text）
+	// v1.0.0（M6）：思考内容前置 reasoning 条目（官方结构：summary 可空数组 + content 内 reasoning_text）
 	if ir.Reasoning != "" {
 		output = append(output, map[string]interface{}{
 			"type": "reasoning", "id": "rs_llmproxy", "summary": []interface{}{},

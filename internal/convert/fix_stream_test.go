@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// v1.7.6 修复回归：流式发射器与解析器的异常路径（M7 / M8）。
+// v1.0.0 修复回归：流式发射器与解析器的异常路径（M7 / M8）。
 
 // TestAnthropicEmitterIndexUnique M7 回归：上游先发工具调用、后发文本（或文本→工具→文本
 // 交替）时，Anthropic 客户端侧的 content_block_start 索引必须唯一且单调递增。

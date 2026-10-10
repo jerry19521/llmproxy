@@ -1,6 +1,6 @@
-package core
+﻿package core
 
-// v1.8.4 第三轮全量审查回归测试（core 侧）：
+// v1.0.0 第三轮全量审查回归测试（core 侧）：
 //   M7  外部编辑配置与界面保存的 write-skew——保存前吸收外部变更，不再静默覆盖
 
 import (

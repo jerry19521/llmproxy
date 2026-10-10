@@ -1,6 +1,6 @@
-package api
+﻿package api
 
-// v1.8.6 回归测试（对应需求 12 版本更新记录 v1.8.6 小节）：
+// v1.0.0 回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
 //   全局默认 User-Agent（default_user_agent 设置项）——部分上游网关（腾讯元宝 bot）
 //   对 Go 默认 UA 返回 403「错误请求」。覆盖：设置读写全链路、
 //   测试 Key（/api/providers/test）与自动获取模型（/api/providers/fetch-models）

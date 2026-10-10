@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"net/http"
@@ -50,7 +50,7 @@ func TestUpstream400NoRetry(t *testing.T) {
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestUpstream500RetriesAllKeys(t *testing.T) {
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
 		// 本用例专注重试语义：禁用冷却池，避免非流式子用例的失败入池后拦截流式子用例
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)

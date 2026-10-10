@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"fmt"
@@ -49,7 +49,7 @@ func newStreamGuardStack(t *testing.T, upstreamURL string) (*Handler, *logsdb.Lo
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
 		// 禁用冷却池：隔离变量，专注重试守卫本身
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)

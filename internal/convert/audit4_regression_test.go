@@ -1,6 +1,6 @@
-package convert
+﻿package convert
 
-// v1.8.5 复查修复的回归测试（对应需求 12 版本更新记录 v1.8.5 小节）：
+// v1.0.0 复查修复的回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
 //   G3  responsesSSE 兜底合成首事件为 response.created（created/in_progress 前置于条目事件）
 //   G4  parseResponsesResponse 解析 reasoning 条目 summary 通道（content 优先、按条目独立兜底）
 

@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// 本文件验证「终止帧已送达后客户端断开」的正确归类（v1.7.4）：
+// 本文件验证「终止帧已送达后客户端断开」的正确归类（v1.0.0）：
 // SSE 客户端（如 Codex）读完终止事件（response.completed / [DONE] / message_stop）
 // 后即认为响应结束并关闭连接，属正常完成。此时代理若还在等上游剩余字节
 // （[DONE] 后的 keep-alive 等），随后的读错误不应记为"客户端断开"失败，
@@ -151,7 +151,7 @@ func TestStreamCompletedThenClientCloseSameFmt(t *testing.T) {
 }
 
 // TestStreamLogFourWayData 跨格式流式：日志详情应完整记录四组请求/响应数据
-// （客户端请求 / 代理→上游请求 / 上游响应 / 代理→客户端响应），认证头脱敏（v1.7.5）。
+// （客户端请求 / 代理→上游请求 / 上游响应 / 代理→客户端响应），认证头脱敏（v1.0.0）。
 func TestStreamLogFourWayData(t *testing.T) {
 	up := completeThenHangUpstream(t)
 	defer up.Close()

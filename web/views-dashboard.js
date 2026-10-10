@@ -1,7 +1,7 @@
-// ===== 仪表盘视图 =====
+﻿// ===== 仪表盘视图 =====
 Views.Dashboard = {
   async render(el) {
-    const seq = App.renderSeq; // M9（v1.7.6）：路由切换守卫
+    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
     el.innerHTML = '<div class="muted">加载中...</div>';
     try {
       const [d, recent] = await Promise.all([
@@ -75,7 +75,7 @@ Views.Dashboard = {
         </div>`;
       document.getElementById('db-more-logs').onclick = () => App.navigate('/logs');
     } catch (e) {
-      if (seq !== App.renderSeq) return; // v1.8.3（F2）：页面已切换时迟到的失败响应不覆盖新页面
+      if (seq !== App.renderSeq) return; // v1.0.0（F2）：页面已切换时迟到的失败响应不覆盖新页面
       el.innerHTML = `<div class="card"><h3>加载失败</h3><p class="muted">${U.esc(e.message)}</p></div>`;
     }
   },

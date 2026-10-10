@@ -1,4 +1,4 @@
-// ===== 应用入口：路由、登录、布局 =====
+﻿// ===== 应用入口：路由、登录、布局 =====
 
 const App = {
   routes: [],
@@ -45,13 +45,13 @@ const App = {
     document.getElementById('login-view').classList.add('hidden');
     document.getElementById('app-view').classList.remove('hidden');
 
-    // v1.8.3（F9）：视图卸载钩子——离开旧视图时调用其 destroy（销毁 Chart 实例、
+    // v1.0.0（F9）：视图卸载钩子——离开旧视图时调用其 destroy（销毁 Chart 实例、
     // 停止轮询等），不再依赖视图内部的滞后自杀机制
     if (this.activeView && this.activeView !== this.viewFor(path) && typeof this.activeView.destroy === 'function') {
       this.activeView.destroy();
     }
 
-    this.renderSeq++; // 本次渲染生效：此前在途的旧视图响应全部作废（M9，v1.7.6）
+    this.renderSeq++; // 本次渲染生效：此前在途的旧视图响应全部作废（M9，v1.0.0）
 
     const main = document.getElementById('main-content');
     // 高亮菜单
@@ -107,7 +107,7 @@ const App = {
     }
   },
 
-  // viewFor 路径 → 视图对象（v1.8.3 F9）：用于判断是否需要触发旧视图卸载
+  // viewFor 路径 → 视图对象（v1.0.0 F9）：用于判断是否需要触发旧视图卸载
   viewFor(path) {
     if (path === '/' || path === '/dashboard' || path === '') return Views.Dashboard;
     if (path.startsWith('/providers')) return Views.Providers;

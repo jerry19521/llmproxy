@@ -1,4 +1,4 @@
-// Package convert 实现三种大模型 API 格式之间的双向转换：
+﻿// Package convert 实现三种大模型 API 格式之间的双向转换：
 //
 //	OpenAI Chat Completions（/v1/chat/completions）
 //	OpenAI Responses API（/v1/responses）
@@ -87,7 +87,7 @@ func SetAuthHeaders(h http.Header, apiType, key string) {
 	h.Set("Authorization", "Bearer "+key)
 }
 
-// SetDefaultUserAgent 设置全局默认 User-Agent（v1.8.6）。
+// SetDefaultUserAgent 设置全局默认 User-Agent（v1.0.0）。
 // ua 为空时不设置任何头——保持 Go 标准库默认（Go-http-client/1.1），与旧行为完全一致。
 // 必须在应用供应商自定义头之前调用：后者通过 Header.Set 覆盖默认值，
 // 最终优先级为「供应商自定义头 > 全局默认 > Go 默认」。
@@ -189,7 +189,7 @@ type ResponseIR struct {
 	Model   string
 	Created int64 // Unix 秒，0=未知
 	Text    string
-	// Reasoning 思考/推理内容（v1.8.4 M6）：OpenAI 系 reasoning_content/reasoning、
+	// Reasoning 思考/推理内容（v1.0.0 M6）：OpenAI 系 reasoning_content/reasoning、
 	// Anthropic thinking 块、Responses reasoning 条目的统一通道。跨格式转换时
 	// 转发到目标格式对应字段；同格式透传不受影响（不经 IR）。
 	Reasoning        string
@@ -321,7 +321,7 @@ func usageFromRaw(raw json.RawMessage) (int64, int64, int64) {
 }
 
 // extractUsageSSE 从完整 SSE 流提取 usage（取最后出现的有效值）。
-// v1.8.2（C6）：按事件帧（空行分隔）解析，帧内多行 data: 按规范以 \n 拼接后再解析——
+// v1.0.0（C6）：按事件帧（空行分隔）解析，帧内多行 data: 按规范以 \n 拼接后再解析——
 // SSE 规范允许一个事件的载荷分多行 data: 传输，旧实现逐行独立解析会导致
 // 多行帧全部解析失败、usage 误记 0。
 func extractUsageSSE(body []byte) (int64, int64, int64) {

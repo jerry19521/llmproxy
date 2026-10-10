@@ -1,4 +1,4 @@
-// 供应商接口类型显示名
+﻿// 供应商接口类型显示名
 function apiTypeLabel(t) {
   switch ((t || 'openai').toLowerCase()) {
     case 'responses': return 'Responses API';
@@ -10,7 +10,7 @@ function apiTypeLabel(t) {
 // ===== 供应商管理视图 =====
 Views.Providers = {
   async renderList(el) {
-    const seq = App.renderSeq; // M9（v1.7.6）：路由切换守卫
+    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
     el.innerHTML = '<div class="muted">加载中...</div>';
     try {
       const res = await API.get('/api/providers');
@@ -67,14 +67,14 @@ Views.Providers = {
         };
       });
     } catch (e) {
-      if (seq !== App.renderSeq) return; // v1.8.3（F2）：页面已切换时迟到的失败响应不覆盖新页面
+      if (seq !== App.renderSeq) return; // v1.0.0（F2）：页面已切换时迟到的失败响应不覆盖新页面
       el.innerHTML = `<div class="card"><h3>加载失败</h3><p class="muted">${U.esc(e.message)}</p></div>`;
     }
   },
 
   // ===== 新增 / 修改页 =====
   async renderEdit(el, id) {
-    const seq = App.renderSeq; // M9（v1.7.6）：路由切换守卫
+    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
     const F = {
       id: id, name: '', base_url: '', api_type: 'openai', weight: 1, enabled: true,
       api_keys: [],   // {id, key}（key 可能为脱敏值）
@@ -96,7 +96,7 @@ Views.Providers = {
         return;
       }
     }
-    const ctx = { F, tmpSeq: 0, seq }; // seq：本页渲染序号（v1.8.3 F7：异步动作完成后校验，页面已切换不再弹窗/写回）
+    const ctx = { F, tmpSeq: 0, seq }; // seq：本页渲染序号（v1.0.0 F7：异步动作完成后校验，页面已切换不再弹窗/写回）
     this.drawForm(el, ctx);
   },
 
@@ -305,7 +305,7 @@ Views.Providers = {
   async save(el, ctx) {
     const F = ctx.F;
     if (this.hasDup(F)) { showToast('同一供应商内模型名称不能重复', 'err'); return; }
-    // v1.8.3（F6）：保存期间禁用按钮，防双击重复提交（新增页双击会创建两条同名记录）
+    // v1.0.0（F6）：保存期间禁用按钮，防双击重复提交（新增页双击会创建两条同名记录）
     const btn = el.querySelector('#btn-save');
     if (btn.disabled) return;
     btn.disabled = true;
@@ -343,7 +343,7 @@ Views.Providers = {
     if (!F.base_url.trim()) { showToast('请先填写基础地址', 'err'); return; }
     if (!F.api_keys.some(k => k.key.trim())) { showToast('请先添加至少一条 API Key', 'err'); return; }
     try {
-      // v1.8.3（F1）：编辑页与新增页统一走 POST 表单模式——使用表单当前填写的
+      // v1.0.0（F1）：编辑页与新增页统一走 POST 表单模式——使用表单当前填写的
       // 基础地址 / Key / 请求头（与同页测试按钮“无需先保存”语义一致）；
       // 编辑页表单中的脱敏 Key（含 ***）由后端按 provider_id + key id 恢复完整值。
       const res = await API.post('/api/providers/fetch-models', {
@@ -413,7 +413,7 @@ Views.Providers = {
         model,
         key_ids: keyIds,
       });
-      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应（v1.8.3 F7）
+      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应（v1.0.0 F7）
       (res.results || []).forEach(r => { F.testResults[r.key_id] = r; });
       this.drawKeyRows(el, ctx);
       const okCount = (res.results || []).filter(r => r.success).length;

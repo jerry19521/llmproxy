@@ -1,4 +1,4 @@
-/* ===== LLMProxy 管理控制台样式 ===== */
+﻿/* ===== LLMProxy 管理控制台样式 ===== */
 :root {
   --primary: #2f5af5;
   --primary-dark: #2447c9;
@@ -23,7 +23,7 @@ body {
 }
 .hidden { display: none !important; }
 a { text-decoration: none; color: inherit; }
-/* v1.8.0：弹窗打开期间锁定背景页面滚动 */
+/* v1.0.0：弹窗打开期间锁定背景页面滚动 */
 body.modal-open { overflow: hidden; }
 
 /* ===== 登录页 ===== */
@@ -202,7 +202,7 @@ pre.code.code-full { max-height: 60vh; }
 .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 13px; }
 .kv .k { color: var(--text-sub); }
 
-/* ===== 调用详情（v1.8.0：三标签页 + 请求/响应体结构化解析） ===== */
+/* ===== 调用详情（v1.0.0：三标签页 + 请求/响应体结构化解析） ===== */
 .modal.modal-xl { width: 1100px; }
 
 /* 整体骨架：常驻区（基本信息 + 尝试记录）+ 标签页区，各自独立滚动 */
@@ -315,7 +315,7 @@ pre.code.code-full { max-height: 60vh; }
 .val-null { color: #94a3b8; font-style: italic; }
 .breakable { word-break: break-all; }
 .code-block { margin-bottom: 4px; }
-.expand-block { margin-bottom: 8px; } /* v1.8.4（F8）：长文本折叠容器此前无样式定义 */
+.expand-block { margin-bottom: 8px; } /* v1.0.0（F8）：长文本折叠容器此前无样式定义 */
 
 /* JSON 语法高亮（深色代码块内，前端自实现无外部依赖） */
 pre.code .j-key { color: #7dd3fc; }

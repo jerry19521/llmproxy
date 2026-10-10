@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"os"
@@ -148,7 +148,7 @@ cooldown:
 	}
 }
 
-// TestLogEnabledDefaultOff v1.8.1 回归：日志记录开关默认关闭——
+// TestLogEnabledDefaultOff v1.0.0 回归：日志记录开关默认关闭——
 // Default() 关闭、旧配置无 log.enabled 字段视为关闭（升级后停记）、显式 enabled: true 才开启。
 func TestLogEnabledDefaultOff(t *testing.T) {
 	// 1) Default() 默认关闭

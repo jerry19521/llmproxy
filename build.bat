@@ -26,7 +26,7 @@ if "%TARGET_OS%"=="/?" goto :usage
 rem ---- check go ----
 where go >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] go not found. Install Go 1.22+ and add it to PATH.
+    echo [ERROR] go not found. Install Go 1.26.5+ and add it to PATH.
     exit /b 1
 )
 

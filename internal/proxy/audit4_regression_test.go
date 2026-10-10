@@ -1,6 +1,6 @@
-package proxy
+﻿package proxy
 
-// v1.8.5 复查修复的回归测试（对应需求 12 版本更新记录 v1.8.5 小节）：
+// v1.0.0 复查修复的回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
 //   G6  passthroughStream/convertStream 写失败块的部分写入字节计入 clientBytes（与 sentBytes 同口径）
 //   G7  累积副本达 64MB 封顶后 content 检测覆盖当前块（first_content_ms 不再漏检）
 //   G8  contentMarkers 排除 reasoning 阶段误命中（Responses reasoning_summary_text.done 含 "text" 字段）

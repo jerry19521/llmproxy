@@ -1,6 +1,6 @@
-package api
+﻿package api
 
-// v1.8.5 复查修复的回归测试（对应需求 12 版本更新记录 v1.8.5 小节）：
+// v1.0.0 复查修复的回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
 //   G1  日志查询/详情/单删/仪表盘/统计 store 引用锁内获取 + closed 重试（A5 补全）
 //   G2  设置页日志路径切换持 logOpMu 写锁（正向切换与 M3 回滚路径）
 //   G5  fetch-models ctx 贯穿（NewRequestWithContext）+ 表单模式 10 分钟总预算

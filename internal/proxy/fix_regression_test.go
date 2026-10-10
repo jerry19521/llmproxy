@@ -1,4 +1,4 @@
-package proxy
+﻿package proxy
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.7.6 修复回归测试：M2（模型白名单别名归一）/ M3（非流式客户端断开）/
+// v1.0.0 修复回归测试：M2（模型白名单别名归一）/ M3（非流式客户端断开）/
 // M5①（跨格式流式 200+无法解析响应体按失败处理）。
 
 // newFixStack 搭建代理栈（openai 类型上游；keys 数量与代理 Key 可用模型可配置）。
@@ -50,7 +50,7 @@ func newFixStack(t *testing.T, upstreamURL string, keys int, allowedModels []str
 			IPWhitelist: []string{"*"}, Models: allowedModels,
 		}}
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.8.1 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
 	})
 	if err != nil {
 		t.Fatal(err)

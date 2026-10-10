@@ -1,4 +1,4 @@
-// Package logsdb 调用日志的 SQLite 存储：异步写入、分页查询、详情、统计聚合。
+﻿// Package logsdb 调用日志的 SQLite 存储：异步写入、分页查询、详情、统计聚合。
 package logsdb
 
 import (
@@ -70,7 +70,7 @@ type CallLog struct {
 	ClientRespStatus  int    `json:"client_resp_status,omitempty"`
 	ClientRespHeaders string `json:"client_resp_headers,omitempty"`
 	ClientRespBody    string `json:"client_resp_body,omitempty"`
-	// v1.7.1 速率修复新增：用于 reasoning 流等场景的速率/可观测性。
+	// v1.0.0 速率修复新增：用于 reasoning 流等场景的速率/可观测性。
 	//   FirstByteMs：上游首个响应字节到达时刻（请求发出起算）——流式 token 速率的起算点；
 	//   FirstContentMs：首个 content 类增量到达时刻（请求起算）；
 	//   LastChunkMs：末字节时刻（与 DurationMs 通常一致，记录下来便于审计）；
@@ -93,7 +93,7 @@ type LogStore struct {
 	done    chan struct{} // writer 排空退出信号
 	closed  bool
 	dropped int64 // 队列满丢弃计数（原子操作：多 goroutine 并发 WriteAsync 竞争递增）
-	// writeFailures 写入失败计数（v1.8.4 S7：磁盘满/库损坏期间静默丢失的条数，
+	// writeFailures 写入失败计数（v1.0.0 S7：磁盘满/库损坏期间静默丢失的条数，
 	// 原子操作；Close 时汇总打印，保持日志子系统的可观测性）
 	writeFailures int64
 }
@@ -165,7 +165,7 @@ func Open(path string) (*LogStore, error) {
 	// 旧库迁移：v1.3.0 之前的库无 tokens_per_second 列，v1.5.0 之前的库无 generation_ms 列，
 	// v1.7.1 之前的库无 first_content_ms/last_chunk_ms/sent_bytes/last_sent_ms 列，
 	// v1.7.5 之前的库无四组请求/响应详情列与 first_byte_ms 列。
-	// v1.8.4（S5）：预查 PRAGMA table_info 决定是否执行 ALTER——旧实现靠错误消息文本
+	// v1.0.0（S5）：预查 PRAGMA table_info 决定是否执行 ALTER——旧实现靠错误消息文本
 	// "duplicate column" 判重，依赖 modernc.org/sqlite 当前版本的错误文案；该文案
 	// 非 API 契约，依赖库升级或本地化时会误判为致命错误导致启动失败。
 	existing := map[string]bool{}
@@ -255,7 +255,7 @@ func (s *LogStore) insert(e *CallLog) {
 		e.RespStatus, e.RespHeaders, e.RespBody, e.ClientRespStatus, e.ClientRespHeaders, e.ClientRespBody,
 		e.FirstByteMs, e.FirstContentMs, e.LastChunkMs, e.SentBytes, e.LastSentMs)
 	if err != nil {
-		// v1.8.4（S7）：写入失败计数（磁盘满/库损坏时日志静默消失，与可排查性目标冲突）
+		// v1.0.0（S7）：写入失败计数（磁盘满/库损坏时日志静默消失，与可排查性目标冲突）
 		atomic.AddInt64(&s.writeFailures, 1)
 		fmt.Printf("[logsdb] 写入日志失败: %v\n", err)
 	}
@@ -272,7 +272,7 @@ func (s *LogStore) WriteAsync(e *CallLog) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		// v1.8.4（S7）：关闭后丢弃计数（Recreate/Reopen 切换窗口内的新调用日志
+		// v1.0.0（S7）：关闭后丢弃计数（Recreate/Reopen 切换窗口内的新调用日志
 		// 被静默丢弃，无量化指标可查）
 		atomic.AddInt64(&s.dropped, 1)
 		return
@@ -302,7 +302,7 @@ func (s *LogStore) Close() error {
 	case <-s.done:
 	case <-time.After(15 * time.Second):
 		fmt.Printf("[logsdb] 等待日志写入超时，强制关闭\n")
-		// v1.8.4（S6）：排空队列剩余条目帮助 writer 快速退出——超时后 writer 仍在
+		// v1.0.0（S6）：排空队列剩余条目帮助 writer 快速退出——超时后 writer 仍在
 		// 排空队列并对将关的库逐条 Exec 刷错；drain 与 writer 消费并发无害（均为
 		// 消费侧），被丢弃的条目本就已不可能落库，计入丢弃计数保留可观测性。
 	drain:
@@ -319,7 +319,7 @@ func (s *LogStore) Close() error {
 		fmt.Printf("[logsdb] 警告：运行期间丢弃 %d 条日志（队列满/关闭后到达）\n", atomic.LoadInt64(&s.dropped))
 	}
 	if n := atomic.LoadInt64(&s.writeFailures); n > 0 {
-		// v1.8.4（S7）：写入失败汇总（磁盘满/库损坏期间静默丢失的条数）
+		// v1.0.0（S7）：写入失败汇总（磁盘满/库损坏期间静默丢失的条数）
 		fmt.Printf("[logsdb] 警告：运行期间 %d 条日志写入失败（磁盘满或库损坏）\n", n)
 	}
 	return s.db.Close()
@@ -338,7 +338,7 @@ func (s *LogStore) Reopen(newPath string) (*LogStore, error) {
 // Path 返回当前库文件路径。
 func (s *LogStore) Path() string { return s.path }
 
-// Recreate 清空并重建日志库（v1.8.1）：关闭当前库 → 删除库文件及 -wal / -shm
+// Recreate 清空并重建日志库（v1.0.0）：关闭当前库 → 删除库文件及 -wal / -shm
 // 伴生文件 → 在原路径重建空库，返回新 store（调用方需替换旧引用）。
 // 背景：SQLite 的 DELETE 只把页标记为空闲复用，不会把空间归还文件系统；
 // 删除文件重建可即时释放全部磁盘空间。
@@ -352,7 +352,7 @@ func (s *LogStore) Recreate() (*LogStore, error) {
 	path := s.path
 	_ = s.Close() // 排空队列并关闭连接，Windows 下需先关库才能删除文件
 	removed := true
-	// v1.8.4（S4）：先删伴生文件再删主文件（SQLite 官方建议顺序）——旧顺序下
+	// v1.0.0（S4）：先删伴生文件再删主文件（SQLite 官方建议顺序）——旧顺序下
 	// 主文件删除成功而 -wal 被占用删除失败时，重建后 WAL recovery 会尝试重放旧页，
 	// 存在把已删旧数据写回新库的理论窗口。
 	for _, f := range []string{path + "-shm", path + "-wal", path} {
@@ -367,7 +367,7 @@ func (s *LogStore) Recreate() (*LogStore, error) {
 	}
 	if !removed {
 		// 文件未能删除（被占用）：打开的是旧文件，降级 SQL 清空保证数据被清掉。
-		// v1.8.4（S7）：清空失败时返回错误而非吞掉——旧行为会让 handleLogsClear
+		// v1.0.0（S7）：清空失败时返回错误而非吞掉——旧行为会让 handleLogsClear
 		// 返回 ok:true 但日志实际未清，用户被误导。
 		if _, err := ns.DeleteAll(); err != nil {
 			_ = ns.Close()
@@ -453,7 +453,7 @@ func (s *LogStore) Query(q LogQuery) (*LogPage, error) {
 		q.Page = 1
 	}
 	if q.Page > 100000 {
-		q.Page = 100000 // v1.8.4（S3）：防 (Page-1)*PageSize 回绕与荒谬深分页
+		q.Page = 100000 // v1.0.0（S3）：防 (Page-1)*PageSize 回绕与荒谬深分页
 	}
 	if q.PageSize <= 0 {
 		q.PageSize = 100
@@ -462,7 +462,7 @@ func (s *LogStore) Query(q LogQuery) (*LogPage, error) {
 		q.PageSize = 500 // 防止超大 page_size 拉取大字段列表拖爆内存
 	}
 	where, args := q.buildWhere()
-	// v1.8.4（M8）：COUNT 改用窗口函数随主查询一遍扫描——keyword 命中 8 列时
+	// v1.0.0（M8）：COUNT 改用窗口函数随主查询一遍扫描——keyword 命中 8 列时
 	// （含 1MB 级 req_body 前导通配 LIKE，任何索引均无法命中）旧实现同条件全表
 	// 扫两遍（COUNT 一遍 + SELECT 一遍），大表上秒级卡顿且阻塞异步写入。
 	offset := (q.Page - 1) * q.PageSize

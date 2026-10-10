@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"encoding/json"
@@ -592,7 +592,7 @@ func TestImageURLCompat(t *testing.T) {
 // TestAssistantToolCallTextOrder 同一 assistant 回合中"工具调用在前、文本在后"
 // （Codex 断流重试时回放历史的真实序列）不得拆分为两条 assistant 消息：
 // 拆分后 tool 结果消息不再紧跟发起调用的 assistant，违反 Chat Completions
-// 语义，校验严格的上游（如 MiniMax）直接 400 invalid params（v1.7.3 回归测试）。
+// 语义，校验严格的上游（如 MiniMax）直接 400 invalid params（v1.0.0 回归测试）。
 func TestAssistantToolCallTextOrder(t *testing.T) {
 	// Codex 真实回放序列：user → function_call → function_call_output →
 	// function_call → assistant 文本(preamble) → function_call_output

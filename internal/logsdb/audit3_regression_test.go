@@ -1,6 +1,6 @@
-package logsdb
+﻿package logsdb
 
-// v1.8.4 第三轮全量审查回归测试（logsdb 侧）：
+// v1.0.0 第三轮全量审查回归测试（logsdb 侧）：
 //   S3  超大 Page 值被 clamp，offset 不溢出、分页元数据不荒谬
 //   M8  分页 total 由窗口函数随主查询一遍扫描得出（含 keyword 条件场景）
 

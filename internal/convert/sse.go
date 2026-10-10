@@ -1,6 +1,6 @@
-// sse.go：完整响应 → SSE 事件流的一次性合成。
+﻿// sse.go：完整响应 → SSE 事件流的一次性合成。
 //
-// v1.7.0 起跨格式流式为边收边转发（stream.go 的 StreamConverter 实时转换），
+// v1.0.0 起跨格式流式为边收边转发（stream.go 的 StreamConverter 实时转换），
 // 不再强制上游非流式；本文件仅服务「上游忽略 stream 参数、对 stream=true
 // 仍返回完整 JSON」的兼容网关兜底场景（代理层 fallbackFullBodySSE 调用）：
 // 将非流式响应解析为 IR 后，一次性合成为客户端格式的完整 SSE 事件序列返回。
@@ -64,7 +64,7 @@ func openAISSE(buf *bytes.Buffer, ir *ResponseIR) {
 		sseFrame(buf, "", m)
 	}
 	chunk(map[string]interface{}{"role": "assistant", "content": ""}, nil, false)
-	// v1.8.4（M6）：思考内容前置 reasoning_content chunk
+	// v1.0.0（M6）：思考内容前置 reasoning_content chunk
 	if ir.Reasoning != "" {
 		chunk(map[string]interface{}{"reasoning_content": ir.Reasoning}, nil, false)
 	}
@@ -101,7 +101,7 @@ func anthropicSSE(buf *bytes.Buffer, ir *ResponseIR) {
 		},
 	})
 	idx := 0
-	// v1.8.4（M6）：思考内容前置 thinking 块（signature 空置，展示用途；回传历史时请求解析器忽略）
+	// v1.0.0（M6）：思考内容前置 thinking 块（signature 空置，展示用途；回传历史时请求解析器忽略）
 	if ir.Reasoning != "" {
 		sseFrame(buf, "content_block_start", map[string]interface{}{
 			"type": "content_block_start", "index": idx,
@@ -131,7 +131,7 @@ func anthropicSSE(buf *bytes.Buffer, ir *ResponseIR) {
 	for _, c := range ir.ToolCalls {
 		args := c.Args
 		if args == "" {
-			args = "{}" // v1.8.4（M5）：无参工具参数为空串时以 "{}" 输出，避免客户端聚合 input 为空串解析失败
+			args = "{}" // v1.0.0（M5）：无参工具参数为空串时以 "{}" 输出，避免客户端聚合 input 为空串解析失败
 		}
 		sseFrame(buf, "content_block_start", map[string]interface{}{
 			"type": "content_block_start", "index": idx,
@@ -168,7 +168,7 @@ func responsesSSE(buf *bytes.Buffer, ir *ResponseIR) {
 	}
 	outputIndex := 0
 	outputItems := []map[string]interface{}{}
-	// v1.8.5（G3，关联检查报告 A3）：created/in_progress 前置于所有 output_item 事件，
+	// v1.0.0（G3，关联检查报告 A3）：created/in_progress 前置于所有 output_item 事件，
 	// 对齐官方事件序列（首事件必须为 response.created，此前兜底合成路径 reasoning 条目先于 created 写入）
 	respSkeleton := func(status string) map[string]interface{} {
 		return map[string]interface{}{
@@ -182,7 +182,7 @@ func responsesSSE(buf *bytes.Buffer, ir *ResponseIR) {
 	sseFrame(buf, "response.in_progress", map[string]interface{}{
 		"type": "response.in_progress", "response": respSkeleton("in_progress"),
 	})
-	// v1.8.4（M6）：思考内容前置 reasoning 条目（事件结构对齐官方）
+	// v1.0.0（M6）：思考内容前置 reasoning 条目（事件结构对齐官方）
 	if ir.Reasoning != "" {
 		reasoningItem := map[string]interface{}{
 			"type": "reasoning", "id": "rs_llmproxy", "summary": []interface{}{},
@@ -249,7 +249,7 @@ func responsesSSE(buf *bytes.Buffer, ir *ResponseIR) {
 		fcID := fmt.Sprintf("fc_%d", i+1)
 		args := c.Args
 		if args == "" {
-			args = "{}" // v1.8.4（M5）：无参工具参数为空串时以 "{}" 输出
+			args = "{}" // v1.0.0（M5）：无参工具参数为空串时以 "{}" 输出
 		}
 		fcItem := map[string]interface{}{
 			"type": "function_call", "id": fcID, "call_id": c.ID,

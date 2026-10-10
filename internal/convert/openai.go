@@ -1,4 +1,4 @@
-// openai.go：OpenAI Chat Completions 格式（/v1/chat/completions）的 IR 解析与构建。
+﻿// openai.go：OpenAI Chat Completions 格式（/v1/chat/completions）的 IR 解析与构建。
 package convert
 
 import (
@@ -225,7 +225,7 @@ func buildOpenAIMessages(ir *RequestIR) []map[string]interface{} {
 			})
 		case "assistant":
 			m := map[string]interface{}{"role": "assistant"}
-			// v1.8.4（C7）：openAIParts 过滤空 text 片段后可能为空，回退纯文本通道
+			// v1.0.0（C7）：openAIParts 过滤空 text 片段后可能为空，回退纯文本通道
 			if parts := openAIParts(msg.Parts); len(parts) > 0 {
 				m["content"] = parts
 			} else if msg.Text != "" {
@@ -238,7 +238,7 @@ func buildOpenAIMessages(ir *RequestIR) []map[string]interface{} {
 			}
 			out = append(out, m)
 		default: // user
-			// v1.8.4（C7）：过滤空 text 片段；全被过滤时回退 Text（避免产出空 content 数组）
+			// v1.0.0（C7）：过滤空 text 片段；全被过滤时回退 Text（避免产出空 content 数组）
 			if parts := openAIParts(msg.Parts); len(parts) > 0 {
 				out = append(out, map[string]interface{}{"role": "user", "content": parts})
 			} else {
@@ -258,7 +258,7 @@ func openAIParts(parts []ContentPart) []map[string]interface{} {
 				"image_url": map[string]string{"url": imageDataURL(p)},
 			})
 		} else if p.Text != "" {
-			// v1.8.4（C7）：空 text 片段跳过（与 Anthropic 构建层对齐）——
+			// v1.0.0（C7）：空 text 片段跳过（与 Anthropic 构建层对齐）——
 			// 部分客户端发 [{"type":"text","text":""},{"image_url"}] 空占位写法，
 			// 不过滤时产出 {"type":"text","text":""} 空片段，严格网关会 400。
 			out = append(out, map[string]interface{}{"type": "text", "text": p.Text})
@@ -309,8 +309,8 @@ func parseOpenAIResponse(body []byte) (*ResponseIR, error) {
 			Message struct {
 				Role             string  `json:"role"`
 				Content          *string `json:"content"`
-				ReasoningContent string  `json:"reasoning_content"` // v1.8.4（M6）：DeepSeek R1/兼容网关惯例
-				Reasoning        string  `json:"reasoning"`         // v1.8.4（M6）：部分网关短字段名
+				ReasoningContent string  `json:"reasoning_content"` // v1.0.0（M6）：DeepSeek R1/兼容网关惯例
+				Reasoning        string  `json:"reasoning"`         // v1.0.0（M6）：部分网关短字段名
 				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
@@ -345,7 +345,7 @@ func parseOpenAIResponse(body []byte) (*ResponseIR, error) {
 	if ch.Message.Content != nil {
 		ir.Text = *ch.Message.Content
 	}
-	// v1.8.4（M6）：思考内容归一入 Reasoning 通道（reasoning_content 优先）
+	// v1.0.0（M6）：思考内容归一入 Reasoning 通道（reasoning_content 优先）
 	ir.Reasoning = nonEmpty(ch.Message.ReasoningContent, ch.Message.Reasoning)
 	for _, tc := range ch.Message.ToolCalls {
 		ir.ToolCalls = append(ir.ToolCalls, ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments})
@@ -381,7 +381,7 @@ func buildOpenAIResponse(ir *ResponseIR, model string) []byte {
 	} else {
 		msg["content"] = nil
 	}
-	// v1.8.4（M6）：思考内容转发（DeepSeek R1/兼容网关惯例字段；官方上游忽略未知字段）
+	// v1.0.0（M6）：思考内容转发（DeepSeek R1/兼容网关惯例字段；官方上游忽略未知字段）
 	if ir.Reasoning != "" {
 		msg["reasoning_content"] = ir.Reasoning
 	}

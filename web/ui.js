@@ -1,4 +1,4 @@
-// ===== 通用 UI 组件 =====
+﻿// ===== 通用 UI 组件 =====
 
 // 全局视图命名空间（各 views-*.js 挂载于此）
 const Views = {};
@@ -20,9 +20,9 @@ const Modal = {
     document.getElementById('modal-body').innerHTML = bodyHTML;
     const box = document.getElementById('modal-box');
     box.className = large ? 'modal modal-lg' : 'modal';
-    if (opts && opts.xl) box.classList.add('modal-xl'); // v1.8.0：调用详情等宽内容弹窗（约 1100px）
+    if (opts && opts.xl) box.classList.add('modal-xl'); // v1.0.0：调用详情等宽内容弹窗（约 1100px）
     document.getElementById('modal-mask').classList.remove('hidden');
-    document.body.classList.add('modal-open'); // v1.8.0：弹窗期间锁定背景页面滚动，避免双滚动条干扰
+    document.body.classList.add('modal-open'); // v1.0.0：弹窗期间锁定背景页面滚动，避免双滚动条干扰
   },
   close() {
     document.getElementById('modal-mask').classList.add('hidden');

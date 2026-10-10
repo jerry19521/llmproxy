@@ -1,4 +1,4 @@
-// ===== API 请求封装 =====
+﻿// ===== API 请求封装 =====
 const API = {
   token: localStorage.getItem('llmproxy_token') || '',
 
@@ -79,7 +79,7 @@ const U = {
     }
     return 'sk-' + s;
   },
-  // copyText 复制文本到剪贴板（v1.8.3，F3 修复）：navigator.clipboard 仅在安全上下文
+  // copyText 复制文本到剪贴板（v1.0.0，F3 修复）：navigator.clipboard 仅在安全上下文
   // （https / localhost）可用，局域网 http://IP:9080 访问时不存在——降级为临时 textarea +
   // execCommand 兼容方案，复制功能不再完全失效。
   async copyText(text) {
@@ -98,7 +98,7 @@ const U = {
       return ok;
     } catch (e) { return false; }
   },
-  // fmtDateLocal ISO 时间 → 本地日期 YYYY-MM-DD（v1.8.3，F11 修复）：
+  // fmtDateLocal ISO 时间 → 本地日期 YYYY-MM-DD（v1.0.0，F11 修复）：
   // 有效期回填应按本地时区取日期，直接 slice(0,10) 取 UTC 日期会在西时区漂移一天。
   fmtDateLocal(iso) {
     if (!iso) return '';
