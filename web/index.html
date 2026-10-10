@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMProxy 管理控制台</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>">
+</head>
+<body>
+  <!-- 登录视图 -->
+  <div id="login-view" class="login-wrap hidden">
+    <div class="login-card">
+      <div class="login-logo">🛰️</div>
+      <h1>LLMProxy</h1>
+      <p class="login-sub">大模型代理工具 · 管理控制台</p>
+      <form id="login-form">
+        <label class="field"><span>用户名</span>
+          <input type="text" id="login-username" autocomplete="username" value="admin" required>
+        </label>
+        <label class="field"><span>密码</span>
+          <input type="password" id="login-password" autocomplete="current-password" required>
+        </label>
+        <div id="login-error" class="form-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">登 录</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 主应用视图 -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">🛰️ LLMProxy</div>
+      <nav id="side-nav">
+        <a href="/dashboard" data-route="/dashboard">📊 仪表盘</a>
+        <a href="/providers" data-route="/providers">🔌 供应商管理</a>
+        <a href="/apikeys" data-route="/apikeys">🔑 代理 Key</a>
+        <a href="/logs" data-route="/logs">📜 调用日志</a>
+        <a href="/statistics" data-route="/statistics">📈 统计分析</a>
+        <a href="/settings" data-route="/settings">⚙️ 设置</a>
+      </nav>
+      <div class="sidebar-footer">v1.8.6</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <h2 id="page-title">仪表盘</h2>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost" id="btn-change-pwd">修改密码</button>
+          <button class="btn btn-ghost" id="btn-logout">退出登录</button>
+        </div>
+      </header>
+      <div id="main-content" class="content"></div>
+    </main>
+  </div>
+
+  <!-- 通用弹窗 -->
+  <div id="modal-mask" class="modal-mask hidden">
+    <div class="modal" id="modal-box">
+      <div class="modal-head">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="modal-close">×</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/chart.umd.js"></script>
+  <script src="/api.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/log-parser.js"></script>
+  <script src="/views-dashboard.js"></script>
+  <script src="/views-providers.js"></script>
+  <script src="/views-apikeys.js"></script>
+  <script src="/views-settings.js"></script>
+  <script src="/views-logs.js"></script>
+  <script src="/views-statistics.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
