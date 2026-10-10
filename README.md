@@ -1,14 +1,3 @@
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '6f926dd0-fdbe-4710-8554-5e3e406cba13'
-  PropagateID: '6f926dd0-fdbe-4710-8554-5e3e406cba13'
-  ReservedCode1: '5e97ec11-e5ff-4e3a-a5a7-a69eb4d75691'
-  ReservedCode2: '5e97ec11-e5ff-4e3a-a5a7-a69eb4d75691'
----
-
 # LLMProxy 大模型代理工具
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
