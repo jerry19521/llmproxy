@@ -19,8 +19,13 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '*'       # 任何 tag 都触发(覆盖 v1.0.0 与 1.0.0 两种命名)
   workflow_dispatch:
+
+# 默认 GOPROXY 指向国内镜像,避免 CI 默认 proxy.golang.org 在国内拉取
+# modernc.org/sqlite 等大型依赖时慢甚至超时。
+env:
+  GOPROXY: https://goproxy.cn,direct
 
 permissions:
   contents: write   # required for softprops/action-gh-release
@@ -38,6 +43,7 @@ jobs:
         with:
           go-version: '1.26.5'
           cache: true
+          cache-dependency-path: go.sum
 
       - name: Extract version from tag
         id: version
