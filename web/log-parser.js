@@ -1,4 +1,4 @@
-﻿// ===== 调用日志内容解析引擎（v1.0.0） =====
+﻿// ===== 调用日志内容解析引擎 =====
 // 纯函数模块：将日志记录的请求体 / 响应体（含 SSE 流）解析为结构化中间表示，
 // 不操作 DOM；渲染由 views-logs.js 完成。覆盖三种接口格式：
 //   cc        OpenAI Chat Completions（/v1/chat/completions）
@@ -98,10 +98,10 @@ const LogParser = (() => {
   // ---------- 格式识别 ----------
 
   // URL 路径优先；body 结构兜底。四组方向数据各自独立调用（跨格式时两侧格式不同）。
-  // v1.0.0（F5）：末段精确匹配优先——includes 子串顺序匹配会被 base_url 干扰
-  //（如 Anthropic 供应商 base_url 含 /responses 子串时，完整上游 URL 会先命中
+// 末段精确匹配优先——includes 子串顺序匹配会被 base_url 干扰
+  // （如 Anthropic 供应商 base_url 含 /responses 子串时，完整上游 URL 会先命中
   // responses 分支误判，且 URL 命中后无帧内容兜底）；末段匹配覆盖正常场景，
-  // 子串 includes 仅作兕底。
+  // 子串 includes 仅作兜底。
   function detectFormat(url, bodyStr, frames) {
     const u = str(url).toLowerCase();
     if (u.endsWith('/chat/completions')) return 'cc';
@@ -130,8 +130,8 @@ const LogParser = (() => {
   function guessFormatFromJSON(obj) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 'unknown';
     if (Array.isArray(obj.choices)) return 'cc';
-    // v1.0.0（F4）：Responses 的 input 允许纯字符串（单条 user 文本，与代理后端解析器同步），
-    // URL 缺失的旧日志/未发上游的失败记录只能靠 JSON 兕底猜测时不再落入 unknown
+    // Responses 的 input 允许纯字符串（单条 user 文本，与代理后端解析器同步），
+    // URL 缺失的日志/未发上游的失败记录只能靠 JSON 兜底猜测时不会落入 unknown
     if (Array.isArray(obj.output) || Array.isArray(obj.input) || typeof obj.input === 'string' || 'instructions' in obj) return 'responses';
     if (obj.type === 'message' && Array.isArray(obj.content)) return 'anthropic';
     if (Array.isArray(obj.messages)) {
@@ -568,7 +568,7 @@ const LogParser = (() => {
         case 'message_start': {
           const m = d.message || {};
           id = m.id || id; model = m.model || model;
-          // v1.0.0（F3）：全量拷贝 usage——此前仅取两字段会丢弃
+          // 全量拷贝 usage——若仅取 prompt/completion 两字段会丢弃
           // cache_creation_input_tokens / cache_read_input_tokens 等缓存统计字段，
           // normalizeUsage 的未知字段兜底可将它们如实展示
           if (m.usage) usage = Object.assign({}, m.usage);
@@ -748,10 +748,10 @@ const LogParser = (() => {
     return out;
   }
 
-  // ---------- v1.0.0：调用详情数据源 ----------
+  // ---------- 调用详情数据源 ----------
 
   // clientRespBody 返回详情页「客户端响应」区块应展示的响应体。
-  // v1.0.0 起所有日志都是新结构（client_resp_body 列必存在）：
+  // 日志表 client_resp_body 列必存在：
   //   - 正常响应：该字段存实际写入客户端的字节
   //   - 失败 / 客户端断开：该字段为空或 null（语义即"未送达"）
   // 不再回退到 resp_body——resp_body 是上游响应，未必等于已写入客户端的内容。

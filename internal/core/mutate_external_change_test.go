@@ -1,7 +1,7 @@
-﻿package core
+package core
 
-// v1.0.0 第三轮全量审查回归测试（core 侧）：
-//   M7  外部编辑配置与界面保存的 write-skew——保存前吸收外部变更，不再静默覆盖
+// 外部编辑配置与界面保存的 write-skew 回归测试（core 侧）：
+// 保存前吸收外部变更，避免界面保存静默覆盖外部修改。
 
 import (
 	"os"
@@ -14,11 +14,11 @@ import (
 	"llmproxy/internal/config"
 )
 
-// TestAudit3MutateAbsorbsExternalChange M7 回归：外部编辑 config.yml 落盘后、
+// TestMutateAbsorbsExternalChange 外部编辑 config.yml 落盘后、
 // Watch 下一 tick 之前的窗口内执行界面保存（Mutate），外部变更必须被吸收保留——
-// 旧实现基于内存旧快照全量写盘，外部变更被静默覆盖且 lastMod 随之对齐，
-// Watch 永远检测不到，变更完全丢失且无告警。
-func TestAudit3MutateAbsorbsExternalChange(t *testing.T) {
+// 否则基于内存旧快照全量写盘会把外部变更静默覆盖（且 lastMod 随之对齐
+// 让 Watch 永远检测不到），变更完全丢失且无告警。
+func TestMutateAbsorbsExternalChange(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.yml")
 	mgr := config.NewManager(cfgPath)
@@ -56,7 +56,7 @@ func TestAudit3MutateAbsorbsExternalChange(t *testing.T) {
 
 	got := mgr.Cfg()
 	if got.TestMessage != "ui-change" {
-		t.Fatalf("M7：界面变更应生效，实际 TestMessage=%q", got.TestMessage)
+		t.Fatalf("界面变更应生效，实际 TestMessage=%q", got.TestMessage)
 	}
 	found := false
 	for _, p := range got.Providers {
@@ -65,13 +65,13 @@ func TestAudit3MutateAbsorbsExternalChange(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("M7：外部编辑的供应商被界面保存静默覆盖丢失，现存 %d 个供应商", len(got.Providers))
+		t.Fatalf("外部编辑的供应商被界面保存静默覆盖丢失，现存 %d 个供应商", len(got.Providers))
 	}
 }
 
-// TestAudit3MutateRejectsBrokenExternalFile M7 互补：外部把文件改坏（YAML 非法）时，
+// TestMutateRejectsBrokenExternalFile 外部把文件改坏（YAML 非法）时，
 // 保存应被拒绝并返回错误——覆盖坏文件会让用户已输入的修复一并丢失。
-func TestAudit3MutateRejectsBrokenExternalFile(t *testing.T) {
+func TestMutateRejectsBrokenExternalFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.yml")
 	mgr := config.NewManager(cfgPath)
@@ -88,9 +88,9 @@ func TestAudit3MutateRejectsBrokenExternalFile(t *testing.T) {
 
 	err := state.Mutate(func(ns *Snapshot) { ns.TestMessage = "should-not-save" })
 	if err == nil {
-		t.Fatalf("M7：外部文件被改坏时保存应被拒绝，实际保存成功")
+		t.Fatalf("外部文件被改坏时保存应被拒绝，实际保存成功")
 	}
 	if got := mgr.Cfg().TestMessage; got == "should-not-save" {
-		t.Fatalf("M7：拒绝保存时内存配置不应被变更")
+		t.Fatalf("拒绝保存时内存配置不应被变更")
 	}
 }

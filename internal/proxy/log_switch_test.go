@@ -1,4 +1,4 @@
-﻿package proxy
+package proxy
 
 import (
 	"net/http"
@@ -11,7 +11,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.0.0 回归：日志记录开关（log.enabled，默认关闭）。
+// 日志记录开关（log.enabled，默认关闭）。
 // - 关闭：成功调用 / 失败调用 / 模型未匹配均不写日志（writeSuccessLog /
 //   writeFailureLog / writeModelNotFoundLog 三路径全覆盖）；
 // - 开启：各路径恢复写入；
@@ -25,9 +25,9 @@ func TestLogSwitchDisabledDropsAllWrites(t *testing.T) {
 	}))
 	defer up.Close()
 
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil)
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil)
 	defer cleanup()
-	// newFixStack 显式开启日志；此处显式关闭，验证开关的「关闭」语义
+	// newSingleProviderStack 显式开启日志；此处显式关闭，验证开关的「关闭」语义
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = false }); err != nil {
 		t.Fatal(err)
 	}
@@ -35,11 +35,11 @@ func TestLogSwitchDisabledDropsAllWrites(t *testing.T) {
 	defer ts.Close()
 
 	// 成功调用
-	if code, body := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
 		t.Fatalf("调用应成功，实际 %d: %s", code, body)
 	}
 	// 模型未匹配（404 路径）
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", `{"model":"no-such-model","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", `{"model":"no-such-model","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
 		t.Fatalf("未匹配模型应 404，实际 %d", code)
 	}
 
@@ -62,7 +62,7 @@ func TestLogSwitchEnabledWritesLog(t *testing.T) {
 	}))
 	defer up.Close()
 
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil) // 栈内已显式开启日志
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil) // 栈内已显式开启日志
 	defer cleanup()
 	if !h.State.Snap().LogEnabled {
 		t.Fatal("测试栈应开启日志")
@@ -71,7 +71,7 @@ func TestLogSwitchEnabledWritesLog(t *testing.T) {
 	defer ts.Close()
 
 	// 开启：成功调用 → 1 条
-	if code, body := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
 		t.Fatalf("调用应成功，实际 %d: %s", code, body)
 	}
 	page := waitForLog(t, store)
@@ -86,7 +86,7 @@ func TestLogSwitchEnabledWritesLog(t *testing.T) {
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = false }); err != nil {
 		t.Fatal(err)
 	}
-	if code, body := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
 		t.Fatalf("关闭后调用仍应成功（开关仅影响日志），实际 %d: %s", code, body)
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -102,7 +102,7 @@ func TestLogSwitchEnabledWritesLog(t *testing.T) {
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = true }); err != nil {
 		t.Fatal(err)
 	}
-	if code, body := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
 		t.Fatalf("再次开启后调用应成功，实际 %d: %s", code, body)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -124,7 +124,7 @@ func TestLogSwitchModelNotFoundPath(t *testing.T) {
 	}))
 	defer up.Close()
 
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil)
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil)
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
@@ -133,7 +133,7 @@ func TestLogSwitchModelNotFoundPath(t *testing.T) {
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = false }); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", `{"model":"no-such","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", `{"model":"no-such","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
 		t.Fatalf("未匹配应 404，实际 %d", code)
 	}
 	time.Sleep(300 * time.Millisecond)
@@ -145,7 +145,7 @@ func TestLogSwitchModelNotFoundPath(t *testing.T) {
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = true }); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", `{"model":"no-such","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", `{"model":"no-such","messages":[{"role":"user","content":"hi"}]}`); code != 404 {
 		t.Fatalf("未匹配应 404，实际 %d", code)
 	}
 	page := waitForLog(t, store)
@@ -166,7 +166,7 @@ func TestLogSwitchFailurePathNoUpstream(t *testing.T) {
 	}))
 	defer up.Close()
 
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil)
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil)
 	defer cleanup()
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) {
 		ns.LogEnabled = false
@@ -177,7 +177,7 @@ func TestLogSwitchFailurePathNoUpstream(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 503 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 503 {
 		t.Fatalf("上游全失败应 503，实际 %d", code)
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -189,7 +189,7 @@ func TestLogSwitchFailurePathNoUpstream(t *testing.T) {
 	if err := h.State.MutateSettings(func(ns *core.Snapshot) { ns.LogEnabled = true }); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 503 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", `{"model":"m-openai","messages":[{"role":"user","content":"hi"}]}`); code != 503 {
 		t.Fatalf("上游全失败应 503，实际 %d", code)
 	}
 	page := waitForLog(t, store)

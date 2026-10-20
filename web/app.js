@@ -2,7 +2,7 @@
 
 const App = {
   routes: [],
-  renderSeq: 0, // 渲染序号（M9 修复）：每次路由切换自增；视图内 await 返回后校验序号，
+  renderSeq: 0, // 渲染序号：每次路由切换自增；视图内 await 返回后校验序号，
                 // 防止旧页面的慢响应覆盖新页面内容（如仪表盘旧响应迟到重绘覆盖设置页）
 
   init() {
@@ -21,7 +21,20 @@ const App = {
       this.doLogin();
     };
     window.addEventListener('popstate', () => this.render());
+    this.loadVersion();
     this.render();
+  },
+
+  // loadVersion 从 /health 拉取运行版本填入侧边栏；失败时留空（隐藏元素由 CSS 处理）。
+  async loadVersion() {
+    const el = document.getElementById('sidebar-version');
+    if (!el) return;
+    try {
+      const resp = await fetch('/health', { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data && data.version) el.textContent = 'v' + data.version;
+    } catch (e) { /* 健康检查不可用时静默留空 */ }
   },
 
   navigate(path) {
@@ -45,13 +58,13 @@ const App = {
     document.getElementById('login-view').classList.add('hidden');
     document.getElementById('app-view').classList.remove('hidden');
 
-    // v1.0.0（F9）：视图卸载钩子——离开旧视图时调用其 destroy（销毁 Chart 实例、
-    // 停止轮询等），不再依赖视图内部的滞后自杀机制
+    // 视图卸载钩子——离开旧视图时调用其 destroy（销毁 Chart 实例、
+    // 停止轮询等）
     if (this.activeView && this.activeView !== this.viewFor(path) && typeof this.activeView.destroy === 'function') {
       this.activeView.destroy();
     }
 
-    this.renderSeq++; // 本次渲染生效：此前在途的旧视图响应全部作废（M9，v1.0.0）
+    this.renderSeq++; // 本次渲染生效：此前在途的旧视图响应全部作废
 
     const main = document.getElementById('main-content');
     // 高亮菜单
@@ -107,7 +120,7 @@ const App = {
     }
   },
 
-  // viewFor 路径 → 视图对象（v1.0.0 F9）：用于判断是否需要触发旧视图卸载
+  // viewFor 路径 → 视图对象：用于判断是否需要触发旧视图卸载
   viewFor(path) {
     if (path === '/' || path === '/dashboard' || path === '') return Views.Dashboard;
     if (path.startsWith('/providers')) return Views.Providers;

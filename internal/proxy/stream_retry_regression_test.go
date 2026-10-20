@@ -1,4 +1,4 @@
-﻿package proxy
+package proxy
 
 import (
 	"context"
@@ -18,20 +18,20 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.0.0 代码审查修复回归测试：A1（坏 SSE 伪造成功）/ A2（流式断开烧重试）/
-// A4（白名单首候选口径）/ C5（截断中文乱码）。
+// 回归测试：坏 SSE 伪造成功 / 流式断开烧重试 /
+// 白名单首候选口径 / 截断中文乱码。
 
-// auditProviderSpec 描述审计测试栈的一个供应商。
-type auditProviderSpec struct {
+// providerSpec 描述审计测试栈的一个供应商。
+type providerSpec struct {
 	id, name, baseURL, apiType string
 	keys                       int
 	model                      string   // 真实模型名
 	aliases                    []string // 别名
 }
 
-// newAuditStack 搭建多供应商审计测试栈（复用 fixCall 与 fixCCBody）。
-// 代理 Key 固定为 sk-proxy-e2e-key，便于复用 fixCall；CooldownEnabled=false。
-func newAuditStack(t *testing.T, providers []auditProviderSpec, whitelist []string) (*Handler, *logsdb.LogStore, func()) {
+// newMultiProviderStack 搭建多供应商审计测试栈（复用 proxyCall 与 ccReqBody）。
+// 代理 Key 固定为 sk-proxy-e2e-key，便于复用 proxyCall；CooldownEnabled=false。
+func newMultiProviderStack(t *testing.T, providers []providerSpec, whitelist []string) (*Handler, *logsdb.LogStore, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	store, err := logsdb.Open(filepath.Join(dir, "test-log.db"))
@@ -47,7 +47,7 @@ func newAuditStack(t *testing.T, providers []auditProviderSpec, whitelist []stri
 	for _, sp := range providers {
 		aks := make([]config.ProviderAPIKey, 0, sp.keys)
 		for i := 0; i < sp.keys; i++ {
-			aks = append(aks, config.ProviderAPIKey{ID: fmt.Sprintf("%s-k%d", sp.id, i+1), Key: fmt.Sprintf("sk-%s-%d", sp.id, i+1)})
+			aks = append(aks, config.ProviderAPIKey{ID: fmt.Sprintf("%s-k%d", sp.id, i+1), Key: fmt.Sprintf("sk-%s-%d", sp.id, i+1), Enabled: true})
 		}
 		ps = append(ps, &config.Provider{
 			ID: sp.id, Name: sp.name, BaseURL: sp.baseURL, APIType: sp.apiType,
@@ -58,7 +58,7 @@ func newAuditStack(t *testing.T, providers []auditProviderSpec, whitelist []stri
 	if err := state.Mutate(func(ns *core.Snapshot) {
 		ns.Providers = ps
 		ns.APIKeys = []*config.ProxyKey{{
-			ID: "pk1", Name: "audit", Key: "sk-proxy-e2e-key", Enabled: true,
+			ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true,
 			IPWhitelist: []string{"*"}, Models: whitelist,
 		}}
 		ns.CooldownEnabled = false
@@ -72,8 +72,9 @@ func newAuditStack(t *testing.T, providers []auditProviderSpec, whitelist []stri
 	return h, store, cleanup
 }
 
-// TestBadSSEHtmlFailsNotFakesSuccess A1（V-P2）回归：跨格式流式时上游返回 200 + data: <html> 坏帧，
+// TestBadSSEHtmlFailsNotFakesSuccess 跨格式流式时上游返回 200 + data: <html> 坏帧，
 // 代理应按失败处理（可重试），穷尽后 503——不得向客户端伪造成功终止流并记 success。
+// 失败信号："上游返回了无法解析的 200 响应"。
 func TestBadSSEHtmlFailsNotFakesSuccess(t *testing.T) {
 	var upstreamHits int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,17 +84,17 @@ func TestBadSSEHtmlFailsNotFakesSuccess(t *testing.T) {
 		_, _ = w.Write([]byte("data: <html>Bad Gateway Error Page</html>\n\n"))
 	}))
 	defer up.Close()
-	h, store, cleanup := newAuditStack(t, []auditProviderSpec{{
+	h, store, cleanup := newMultiProviderStack(t, []providerSpec{{
 		id: "p1", name: "badup", baseURL: up.URL, apiType: convert.FormatResponses, keys: 1, model: "testmodel",
 	}}, nil)
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
-	code, body := fixCall(t, ts, "/v1/chat/completions",
+	code, body := proxyCall(t, ts, "/v1/chat/completions",
 		`{"model":"testmodel","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
 	if code != http.StatusServiceUnavailable {
-		t.Fatalf("穷尽重试后应 503（旧实现伪造成功空流），实际 %d: %s", code, body)
+		t.Fatalf("穷尽重试后应 503（伪造成功空流），实际 %d: %s", code, body)
 	}
 	if strings.Contains(body, "[DONE]") || strings.Contains(body, "finish_reason") || strings.Contains(body, "chat.completion.chunk") {
 		t.Fatalf("不应向客户端输出伪造的成功终止流: %s", body)
@@ -104,15 +105,16 @@ func TestBadSSEHtmlFailsNotFakesSuccess(t *testing.T) {
 	}
 	l := page.Logs[0]
 	if l.Status != "failure" {
-		t.Fatalf("应记 failure（旧实现记 success），实际 %s", l.Status)
+		t.Fatalf("应记 failure（记 success），实际 %s", l.Status)
 	}
 	if l.ErrorMsg == nil || !strings.Contains(*l.ErrorMsg, "无法解析的 200") {
 		t.Fatalf("错误应说明 200 响应无法解析，实际 %v", l.ErrorMsg)
 	}
 }
 
-// TestStreamClientDisconnectBeforeFirstByteNoRetry A2（V-N1）回归：流式首字节前客户端断开，
+// TestStreamClientDisconnectBeforeFirstByteNoRetry 流式首字节前客户端断开，
 // 代理不应对每个 Key 真实发起上游请求烧配额，应记 failure「客户端断开」、retry_count=0、上游仅 1 次请求。
+// 设计意图：客户端已断开后所有重试无人接收响应，会白烧上游配额。
 func TestStreamClientDisconnectBeforeFirstByteNoRetry(t *testing.T) {
 	var upstreamHits int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +130,8 @@ func TestStreamClientDisconnectBeforeFirstByteNoRetry(t *testing.T) {
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n"))
 	}))
 	defer up.Close()
-	// 3 条 Key：旧实现对每条 Key 真实发起上游请求（共 3 次）
-	h, store, cleanup := newAuditStack(t, []auditProviderSpec{{
+	// 3 条 Key：若实现未对客户端断开做短路，将对每条 Key 真实发起上游请求（共 3 次）
+	h, store, cleanup := newMultiProviderStack(t, []providerSpec{{
 		id: "p1", name: "slowup", baseURL: up.URL, apiType: convert.FormatOpenAI, keys: 3, model: "testmodel",
 	}}, nil)
 	defer cleanup()
@@ -168,14 +170,14 @@ func TestStreamClientDisconnectBeforeFirstByteNoRetry(t *testing.T) {
 		t.Fatalf("客户端断开不应烧重试槽位（retry_count 应 0），实际 %d", l.RetryCount)
 	}
 	if atomic.LoadInt32(&upstreamHits) != 1 {
-		t.Fatalf("上游应只收到 1 次请求（旧实现对每 Key 真实发起共 3 次），实际 %d", atomic.LoadInt32(&upstreamHits))
+		t.Fatalf("上游应只收到 1 次请求（对每 Key 真实发起共 3 次），实际 %d", atomic.LoadInt32(&upstreamHits))
 	}
 }
 
-// TestWhitelistSharedAliasRoutesToAllowedProvider A4（V-M4）回归：双供应商共享别名 shared
+// TestWhitelistSharedAliasRoutesToAllowedProvider 双供应商共享别名 shared
 // （分别指向 a-real/b-real），Key 白名单=[b-real]。客户端请求 shared：原始名 shared 不在白名单 →
 // 仅保留自身真实名在白名单内的候选（B），路由只在 B 选择 → 200 且 B 被调用、A 不被调用
-// （旧实现只按全局首候选 a-real 归一匹配 → 合法调用被整单 403）。
+// （白名单匹配应按"各候选自身命中的真实名"判断，而非全局首候选归一）。
 func TestWhitelistSharedAliasRoutesToAllowedProvider(t *testing.T) {
 	var aHits, bHits int32
 	upA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +192,7 @@ func TestWhitelistSharedAliasRoutesToAllowedProvider(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"from-b"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 	}))
 	defer upB.Close()
-	h, _, cleanup := newAuditStack(t, []auditProviderSpec{
+	h, _, cleanup := newMultiProviderStack(t, []providerSpec{
 		{id: "pa", name: "provA", baseURL: upA.URL, apiType: convert.FormatOpenAI, keys: 1, model: "a-real", aliases: []string{"shared"}},
 		{id: "pb", name: "provB", baseURL: upB.URL, apiType: convert.FormatOpenAI, keys: 1, model: "b-real", aliases: []string{"shared"}},
 	}, []string{"b-real"})
@@ -198,15 +200,15 @@ func TestWhitelistSharedAliasRoutesToAllowedProvider(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
-	if code, body := fixCall(t, ts, "/v1/chat/completions", fmt.Sprintf(fixCCBody, `"shared"`)); code != 200 {
-		t.Fatalf("共享别名经白名单允许的候选应 200（旧实现按首候选 a-real 归一匹配误 403），实际 %d: %s", code, body)
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", fmt.Sprintf(ccReqBody, `"shared"`)); code != 200 {
+		t.Fatalf("共享别名经白名单允许的候选应 200（按首候选 a-real 归一匹配误 403），实际 %d: %s", code, body)
 	}
 	if atomic.LoadInt32(&aHits) != 0 || atomic.LoadInt32(&bHits) != 1 {
 		t.Fatalf("应只调用 B（白名单允许），实际 A=%d B=%d", aHits, bHits)
 	}
 }
 
-// TestWhitelistFiltersToEmptyReturns403 A4 互补：白名单匹配不到任何候选 → 过滤后为空 → 403，
+// TestWhitelistFiltersToEmptyReturns403 白名单匹配不到任何候选 → 过滤后为空 → 403，
 // 且不调用任何供应商（过滤发生在路由之前）。
 func TestWhitelistFiltersToEmptyReturns403(t *testing.T) {
 	var hits int32
@@ -216,7 +218,7 @@ func TestWhitelistFiltersToEmptyReturns403(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 	}))
 	defer up.Close()
-	h, _, cleanup := newAuditStack(t, []auditProviderSpec{
+	h, _, cleanup := newMultiProviderStack(t, []providerSpec{
 		{id: "pa", name: "provA", baseURL: up.URL, apiType: convert.FormatOpenAI, keys: 1, model: "a-real", aliases: []string{"shared"}},
 		{id: "pb", name: "provB", baseURL: up.URL, apiType: convert.FormatOpenAI, keys: 1, model: "b-real", aliases: []string{"shared"}},
 	}, []string{"c-real"}) // 不存在的真实名 → 过滤后为空
@@ -224,7 +226,7 @@ func TestWhitelistFiltersToEmptyReturns403(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", fmt.Sprintf(fixCCBody, `"shared"`)); code != http.StatusForbidden {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", fmt.Sprintf(ccReqBody, `"shared"`)); code != http.StatusForbidden {
 		t.Fatalf("白名单匹配不到任何候选应 403，实际 %d", code)
 	}
 	if atomic.LoadInt32(&hits) != 0 {
@@ -232,7 +234,7 @@ func TestWhitelistFiltersToEmptyReturns403(t *testing.T) {
 	}
 }
 
-// TestTruncateUTF8Boundary C5 回归：截断点回退到最近的 UTF-8 字符边界，
+// TestTruncateUTF8Boundary 截断点回退到最近的 UTF-8 字符边界，
 // 避免中文等多字节字符被截半产生乱码；结果始终为合法 UTF-8。
 func TestTruncateUTF8Boundary(t *testing.T) {
 	cases := []struct {

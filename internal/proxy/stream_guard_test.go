@@ -42,14 +42,14 @@ func newStreamGuardStack(t *testing.T, upstreamURL string) (*Handler, *logsdb.Lo
 			Enabled: true, Weight: 1,
 			// 两条 Key：若误重试会切换到第二条
 			APIKeys: []config.ProviderAPIKey{
-				{ID: "k1", Key: "sk-a"}, {ID: "k2", Key: "sk-b"},
+				{ID: "k1", Key: "sk-a", Enabled: true}, {ID: "k2", Key: "sk-b", Enabled: true},
 			},
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
 		// 禁用冷却池：隔离变量，专注重试守卫本身
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)

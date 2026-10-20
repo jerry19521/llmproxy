@@ -1,4 +1,4 @@
-﻿// Package logsdb 调用日志的 SQLite 存储：异步写入、分页查询、详情、统计聚合。
+// Package logsdb 调用日志的 SQLite 存储：异步写入、分页查询、详情、统计聚合。
 package logsdb
 
 import (
@@ -29,10 +29,6 @@ type AttemptLog struct {
 //	代理 → 上游：upstream_url / upstream_req_headers / upstream_req_body（认证头脱敏）
 //	上游 → 代理：resp_status / resp_headers / resp_body（上游响应体副本）
 //	代理 → 客户端：client_resp_status / client_resp_headers / client_resp_body
-//
-// 兼容说明：旧版本 req_url 记录的是上游 URL（现改由 upstream_url 承担，新数据不再写 req_url）；
-// 旧版本流式场景 resp_body 被覆盖为发给客户端的字节（现由 client_resp_body 承担，
-// resp_body 统一为上游响应体）。
 type CallLog struct {
 	ID               string       `json:"id"`
 	Timestamp        string       `json:"timestamp"`
@@ -53,7 +49,7 @@ type CallLog struct {
 	CompletionTokens int64        `json:"completion_tokens"`
 	TotalTokens      int64        `json:"total_tokens"`
 	TokensPerSecond  float64      `json:"tokens_per_second"`
-	ReqURL           string       `json:"req_url,omitempty"` // 兼容旧数据：旧版记录上游 URL，新数据为空，改用 UpstreamURL
+	ReqURL           string       `json:"req_url,omitempty"` // 备用字段：保留列定义以便外部查询脚本可继续引用，新数据统一写入 upstream_url
 	ReqMethod        string       `json:"req_method,omitempty"`
 	ReqHeaders       string       `json:"req_headers,omitempty"`
 	ReqBody          string       `json:"req_body,omitempty"`
@@ -70,7 +66,7 @@ type CallLog struct {
 	ClientRespStatus  int    `json:"client_resp_status,omitempty"`
 	ClientRespHeaders string `json:"client_resp_headers,omitempty"`
 	ClientRespBody    string `json:"client_resp_body,omitempty"`
-	// v1.0.0 速率修复新增：用于 reasoning 流等场景的速率/可观测性。
+	// 速率/可观测性字段：用于 reasoning 流等场景。
 	//   FirstByteMs：上游首个响应字节到达时刻（请求发出起算）——流式 token 速率的起算点；
 	//   FirstContentMs：首个 content 类增量到达时刻（请求起算）；
 	//   LastChunkMs：末字节时刻（与 DurationMs 通常一致，记录下来便于审计）；
@@ -93,7 +89,7 @@ type LogStore struct {
 	done    chan struct{} // writer 排空退出信号
 	closed  bool
 	dropped int64 // 队列满丢弃计数（原子操作：多 goroutine 并发 WriteAsync 竞争递增）
-	// writeFailures 写入失败计数（v1.0.0 S7：磁盘满/库损坏期间静默丢失的条数，
+	// writeFailures 写入失败计数（磁盘满/库损坏期间静默丢失的条数，
 	// 原子操作；Close 时汇总打印，保持日志子系统的可观测性）
 	writeFailures int64
 }
@@ -213,7 +209,7 @@ func (s *LogStore) insert(e *CallLog) {
 		e.RespStatus, e.RespHeaders, e.RespBody, e.ClientRespStatus, e.ClientRespHeaders, e.ClientRespBody,
 		e.FirstByteMs, e.FirstContentMs, e.LastChunkMs, e.SentBytes, e.LastSentMs)
 	if err != nil {
-		// v1.0.0（S7）：写入失败计数（磁盘满/库损坏时日志静默消失，与可排查性目标冲突）
+		// 写入失败时计数（磁盘满/库损坏时日志静默消失，与可排查性目标冲突）
 		atomic.AddInt64(&s.writeFailures, 1)
 		fmt.Printf("[logsdb] 写入日志失败: %v\n", err)
 	}
@@ -221,7 +217,7 @@ func (s *LogStore) insert(e *CallLog) {
 
 // WriteAsync 异步写入（队列满时丢弃并计数，不阻塞代理主流程）。
 // closed 检查与 send 在同一临界区内完成：Close 置位 closed 后不可能再有入队，
-// 彻底消除旧实现"锁外 send × 锁外 close"的 send-on-closed-channel panic 竞态。
+// 彻底消除"锁外 send × 锁外 close"的 send-on-closed-channel panic 竞态。
 // send 为非阻塞（队列满走 default 丢弃），持锁不会长时间阻塞。
 func (s *LogStore) WriteAsync(e *CallLog) {
 	if s == nil || e == nil {
@@ -230,7 +226,7 @@ func (s *LogStore) WriteAsync(e *CallLog) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		// v1.0.0（S7）：关闭后丢弃计数（Recreate/Reopen 切换窗口内的新调用日志
+		// 关闭后丢弃计数（Recreate/Reopen 切换窗口内的新调用日志
 		// 被静默丢弃，无量化指标可查）
 		atomic.AddInt64(&s.dropped, 1)
 		return
@@ -260,8 +256,7 @@ func (s *LogStore) Close() error {
 	case <-s.done:
 	case <-time.After(15 * time.Second):
 		fmt.Printf("[logsdb] 等待日志写入超时，强制关闭\n")
-		// v1.0.0（S6）：排空队列剩余条目帮助 writer 快速退出——超时后 writer 仍在
-		// 排空队列并对将关的库逐条 Exec 刷错；drain 与 writer 消费并发无害（均为
+		// 超时后帮 writer 排空队列剩余条目：drain 与 writer 消费并发无害（均为
 		// 消费侧），被丢弃的条目本就已不可能落库，计入丢弃计数保留可观测性。
 	drain:
 		for {
@@ -277,7 +272,7 @@ func (s *LogStore) Close() error {
 		fmt.Printf("[logsdb] 警告：运行期间丢弃 %d 条日志（队列满/关闭后到达）\n", atomic.LoadInt64(&s.dropped))
 	}
 	if n := atomic.LoadInt64(&s.writeFailures); n > 0 {
-		// v1.0.0（S7）：写入失败汇总（磁盘满/库损坏期间静默丢失的条数）
+		// 写入失败汇总（磁盘满/库损坏期间静默丢失的条数）
 		fmt.Printf("[logsdb] 警告：运行期间 %d 条日志写入失败（磁盘满或库损坏）\n", n)
 	}
 	return s.db.Close()
@@ -296,7 +291,7 @@ func (s *LogStore) Reopen(newPath string) (*LogStore, error) {
 // Path 返回当前库文件路径。
 func (s *LogStore) Path() string { return s.path }
 
-// Recreate 清空并重建日志库（v1.0.0）：关闭当前库 → 删除库文件及 -wal / -shm
+// Recreate 清空并重建日志库：关闭当前库 → 删除库文件及 -wal / -shm
 // 伴生文件 → 在原路径重建空库，返回新 store（调用方需替换旧引用）。
 // 背景：SQLite 的 DELETE 只把页标记为空闲复用，不会把空间归还文件系统；
 // 删除文件重建可即时释放全部磁盘空间。
@@ -310,9 +305,9 @@ func (s *LogStore) Recreate() (*LogStore, error) {
 	path := s.path
 	_ = s.Close() // 排空队列并关闭连接，Windows 下需先关库才能删除文件
 	removed := true
-	// v1.0.0（S4）：先删伴生文件再删主文件（SQLite 官方建议顺序）——旧顺序下
-	// 主文件删除成功而 -wal 被占用删除失败时，重建后 WAL recovery 会尝试重放旧页，
-	// 存在把已删旧数据写回新库的理论窗口。
+	// 必须按 SQLite 官方建议的顺序：先删伴生文件再删主文件；
+	// 否则主文件删除成功而 -wal 被占用删除失败时，重建后 WAL recovery
+	// 会尝试重放旧页，存在把已删旧数据写回新库的理论窗口。
 	for _, f := range []string{path + "-shm", path + "-wal", path} {
 		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
 			removed = false
@@ -325,8 +320,8 @@ func (s *LogStore) Recreate() (*LogStore, error) {
 	}
 	if !removed {
 		// 文件未能删除（被占用）：打开的是旧文件，降级 SQL 清空保证数据被清掉。
-		// v1.0.0（S7）：清空失败时返回错误而非吞掉——旧行为会让 handleLogsClear
-		// 返回 ok:true 但日志实际未清，用户被误导。
+		// 清空失败必须返回错误而非吞掉——否则 handleLogsClear 返回 ok:true
+		// 但日志实际未清，用户被误导。
 		if _, err := ns.DeleteAll(); err != nil {
 			_ = ns.Close()
 			return nil, fmt.Errorf("日志文件被占用且降级 SQL 清空失败: %w", err)
@@ -411,7 +406,7 @@ func (s *LogStore) Query(q LogQuery) (*LogPage, error) {
 		q.Page = 1
 	}
 	if q.Page > 100000 {
-		q.Page = 100000 // v1.0.0（S3）：防 (Page-1)*PageSize 回绕与荒谬深分页
+		q.Page = 100000 // 防 (Page-1)*PageSize 回绕与荒谬深分页
 	}
 	if q.PageSize <= 0 {
 		q.PageSize = 100
@@ -420,9 +415,9 @@ func (s *LogStore) Query(q LogQuery) (*LogPage, error) {
 		q.PageSize = 500 // 防止超大 page_size 拉取大字段列表拖爆内存
 	}
 	where, args := q.buildWhere()
-	// v1.0.0（M8）：COUNT 改用窗口函数随主查询一遍扫描——keyword 命中 8 列时
-	// （含 1MB 级 req_body 前导通配 LIKE，任何索引均无法命中）旧实现同条件全表
-	// 扫两遍（COUNT 一遍 + SELECT 一遍），大表上秒级卡顿且阻塞异步写入。
+	// COUNT 必须改用窗口函数随主查询一遍扫描：keyword 命中 8 列时
+	// （含 1MB 级 req_body 前导通配 LIKE，任何索引均无法命中），
+	// 分两次扫（COUNT 一遍 + SELECT 一遍）在大表上秒级卡顿且阻塞异步写入。
 	offset := (q.Page - 1) * q.PageSize
 	rows, err := s.db.Query(`SELECT COUNT(*) OVER() AS _total, id,timestamp,apikey,apikey_id,apikey_name,retry_count,attempt_logs,provider,requested_model,actual_model,status,error_msg,duration_ms,generation_ms,prompt_tokens,completion_tokens,total_tokens,tokens_per_second,first_byte_ms,first_content_ms,last_chunk_ms,sent_bytes,last_sent_ms
 		FROM call_logs`+where+` ORDER BY timestamp DESC, rowid DESC LIMIT ? OFFSET ?`,

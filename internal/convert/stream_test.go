@@ -98,7 +98,7 @@ func TestParseOpenAIStreamPayload(t *testing.T) {
 	if len(evs) != 1 || evs[0].Kind != evError || evs[0].Text != "model not found" {
 		t.Fatalf("error 解析异常: %+v", evs)
 	}
-	// reasoning 字段归一为 evThinking（v1.0.0 M6：思考内容不再跨格式丢弃；
+	// reasoning 字段归一为 evThinking（思考内容不再跨格式丢弃；
 	// 同格式仍由代理层原样透传，不经此解析器）
 	if evs := ParseStreamPayload(FormatOpenAI, `{"choices":[{"delta":{"reasoning":"思考中"},"finish_reason":null}]}`); len(evs) != 1 || evs[0].Kind != evThinking || evs[0].Text != "思考中" {
 		t.Fatalf("reasoning 应归一为 thinking 事件: %+v", evs)
@@ -389,7 +389,7 @@ func TestStreamConverterNoFinishEOF(t *testing.T) {
 	}
 }
 
-// TestFinishDeferredUntilDone 终止帧必须延迟到流的真正结束信号（v1.0.0 回归测试）。
+// TestFinishDeferredUntilDone 终止帧必须延迟到流的真正结束信号（回归测试）。
 // OpenAI CC 流的 finish_reason chunk 之后还有 usage chunk（stream_options.include_usage）
 // 与 [DONE]：若在 finish_reason 时就发出终止帧，终止帧里的 usage 全为 0，且客户端收到
 // 终止帧即正常关闭连接后，代理还在等上游剩余数据，会把正常完成误判为"客户端断开"。

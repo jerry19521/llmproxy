@@ -9,7 +9,7 @@ import (
 	"llmproxy/internal/config"
 )
 
-// TestLogEnabledSnapshotSync v1.0.0 回归：日志记录开关在配置 → 快照 → 持久化全链路正确同步。
+// TestLogEnabledSnapshotSync 日志记录开关在配置 → 快照 → 持久化全链路正确同步。
 // 默认关闭；Mutate 开启后快照生效且 yml 显式落盘；外部改 yml 后 Reload 跟随新值。
 func TestLogEnabledSnapshotSync(t *testing.T) {
 	dir := t.TempDir()

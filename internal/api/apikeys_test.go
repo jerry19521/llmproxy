@@ -59,7 +59,7 @@ func TestNormalizeExpiresAt(t *testing.T) {
 	}
 }
 
-// TestValidProxyKeyFormat L2 回归：代理 Key 格式校验（需求 2.7.2：sk- + 32 位字母数字）。
+// TestValidProxyKeyFormat L2 代理 Key 格式校验（需求 2.7.2：sk- + 32 位字母数字）。
 func TestValidProxyKeyFormat(t *testing.T) {
 	valid := []string{
 		"sk-abcdefghijklmnopqrstuvwxyz012345", // 26 字母 + 6 数字 = 32

@@ -16,8 +16,9 @@ import (
 
 // ProviderAPIKey 供应商 API Key（代理调用上游时使用）。
 type ProviderAPIKey struct {
-	ID  string `yaml:"id" json:"id"`
-	Key string `yaml:"key" json:"key"`
+	ID      string `yaml:"id" json:"id"`
+	Key     string `yaml:"key" json:"key"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
 }
 
 // ProviderHeader 供应商自定义请求头。
@@ -86,7 +87,7 @@ type JWTConfig struct {
 	ExpireHours int    `yaml:"expire_hours" json:"expire_hours"`
 }
 
-// normalize 归一化 JWT 配置（v1.0.0，L2 修复）：expire_hours 为 0/负值时回退 24。
+// normalize 归一化 JWT 配置（）：expire_hours 为 0/负值时回退 24。
 // 否则手写 yml 配 expire_hours: 0 会导致登录成功但 token 即刻过期（签发即失效），
 // 管理员被锁在门外且无任何提示。与 CooldownConfig.normalize 同模式兜底。
 func (c *JWTConfig) normalize() {
@@ -98,11 +99,8 @@ func (c *JWTConfig) normalize() {
 // LogConfig 日志配置。
 type LogConfig struct {
 	DBPath  string `yaml:"db_path" json:"db_path"`
-	Enabled *bool  `yaml:"enabled,omitempty" json:"-"` // 是否记录调用日志（v1.0.0）：nil（旧配置无该字段）视为 false，默认不记录
+	Enabled bool   `yaml:"enabled" json:"enabled"`
 }
-
-// EnabledVal 返回是否记录调用日志（nil 视为 false：默认关闭，含旧配置升级场景）。
-func (c *LogConfig) EnabledVal() bool { return c.Enabled != nil && *c.Enabled }
 
 // RoutingConfig 路由策略配置。
 type RoutingConfig struct {
@@ -111,16 +109,13 @@ type RoutingConfig struct {
 
 // CooldownConfig 冷却池配置。
 // 兼容 v1.5 及更早配置：旧字段 duration_minutes（分钟）读取后自动换算为 duration_seconds，
-// 保存时不再输出旧字段；旧配置无 enabled 字段时默认启用。
+// 保存时不再输出旧字段。
 type CooldownConfig struct {
-	Enabled         *bool `yaml:"enabled,omitempty" json:"-"`
-	DurationSeconds int   `yaml:"duration_seconds" json:"duration_seconds"`
-	RetryCount      int   `yaml:"retry_count" json:"retry_count"`      // 连续失败多少轮后才入冷却池
-	DurationMinutes int   `yaml:"duration_minutes,omitempty" json:"-"` // 旧版字段：仅迁移读取，保存时不再输出
+	Enabled         bool `yaml:"enabled" json:"enabled"`
+	DurationSeconds int  `yaml:"duration_seconds" json:"duration_seconds"`
+	RetryCount      int  `yaml:"retry_count" json:"retry_count"`      // 连续失败多少轮后才入冷却池
+	DurationMinutes int  `yaml:"duration_minutes,omitempty" json:"-"` // 旧版字段：仅迁移读取，保存时不再输出
 }
-
-// EnabledVal 返回冷却池是否启用（nil 视为启用）。
-func (c *CooldownConfig) EnabledVal() bool { return c.Enabled == nil || *c.Enabled }
 
 // normalize 归一化冷却池配置：旧字段迁移、缺省值兜底。在配置加载与热加载时调用。
 // 注意：调用前需将 Cooldown 置零后再解码（见 Load/Watch），否则 Default 值会干扰旧字段迁移判断。
@@ -136,10 +131,6 @@ func (c *CooldownConfig) normalize() {
 	if c.RetryCount <= 0 {
 		c.RetryCount = 1
 	}
-	if c.Enabled == nil {
-		e := true
-		c.Enabled = &e
-	}
 }
 
 // Config 顶层配置，对应 config.yml。
@@ -153,13 +144,13 @@ type Config struct {
 	Cooldown               CooldownConfig `yaml:"cooldown" json:"cooldown"`
 	UpstreamTimeoutSeconds int            `yaml:"upstream_timeout_seconds" json:"upstream_timeout_seconds"`
 	TestMessage            string         `yaml:"test_message" json:"test_message"`
-	DefaultUserAgent       string         `yaml:"default_user_agent" json:"default_user_agent"` // 发往上游的默认 User-Agent（v1.0.0）；空=不设置（用 Go 默认）；供应商自定义头可覆盖
+	DefaultUserAgent       string         `yaml:"default_user_agent" json:"default_user_agent"` // 发往上游的默认 User-Agent（）；空=不设置（用 Go 默认）；供应商自定义头可覆盖
 	Providers              []*Provider    `yaml:"providers" json:"providers"`
 	APIKeys                []*ProxyKey    `yaml:"apikeys" json:"apikeys"`
 }
 
 // Manager 管理配置文件的加载、保存与热加载检测。
-// 并发模型（v1.0.0 起）：m.cfg 一经发布即不可变——Update 作用在浅拷贝上，
+// 并发模型（）：m.cfg 一经发布即不可变——Update 作用在浅拷贝上，
 // Watch 整体替换指针；Cfg() 返回的旧对象后续不会被原地修改，
 // 管理接口的并发读（requireAuth/handleLogin 等）与写不存在数据竞争。
 type Manager struct {
@@ -168,6 +159,7 @@ type Manager struct {
 	cfg            *Config
 	lastMod        time.Time
 	lastSize       int64
+	lastParseErr   string        // 上次热加载解析失败的错误文本（mu 保护）：连续相同错误去重打印
 	onChange       func(*Config) // 热加载回调
 	stopCh         chan struct{}
 	listenOverride *Listen // 启动参数 -host/-port 覆盖（nil=无）：仅影响运行值，不落盘
@@ -210,9 +202,9 @@ func Default() *Config {
 		IPTrustLevel:           0,
 		Admin:                  Admin{Username: "admin", Password: ""},
 		JWT:                    JWTConfig{Secret: "", ExpireHours: 24},
-		Log:                    LogConfig{DBPath: "data.db", Enabled: BoolPtr(false)},
+		Log:                    LogConfig{DBPath: "data.db", Enabled: false},
 		Routing:                RoutingConfig{Strategy: "random"},
-		Cooldown:               CooldownConfig{Enabled: BoolPtr(true), DurationSeconds: 300, RetryCount: 1},
+		Cooldown:               CooldownConfig{Enabled: true, DurationSeconds: 300, RetryCount: 1},
 		UpstreamTimeoutSeconds: 300,
 		TestMessage:            "hi",
 		Providers:              []*Provider{},
@@ -220,7 +212,7 @@ func Default() *Config {
 	}
 }
 
-// BoolPtr 返回 bool 指针（供快照写回配置时取地址）。
+// BoolPtr 返回 bool 指针（供区分"未传"/"显式赋值"的请求体反序列化使用）。
 func BoolPtr(v bool) *bool { return &v }
 
 // nowRFC3339 当前本地时间（ISO 8601 带时区偏移）。
@@ -237,7 +229,7 @@ func randomString(n int) string {
 	for len(out) < n {
 		if _, err := rand.Read(buf); err != nil {
 			// 熵源失败退化路径（极端环境），保持可用性。
-			// v1.0.0（S8）：旧退化路径以全零 buf[0] 为起点逐字符递增，产出 'a','b','c'…
+			// 旧退化路径以全零 buf[0] 为起点逐字符递增，产出 'a','b','c'…
 			// 完全可预测的顺序凭证；改用时间熵驱动的线性同余序列，虽不及 CSPRNG
 			// 但不再源码级可预测。
 			state := time.Now().UnixNano() ^ int64(os.Getpid())<<32
@@ -319,7 +311,7 @@ func (m *Manager) Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
-	warnWeakJWTSecret(cfg) // v1.0.0（S13）：手写弱 secret 告警（仅启动时提示一次，不拒绝启动）
+	warnWeakJWTSecret(cfg) // 手写弱 secret 告警（仅启动时提示一次，不拒绝启动）
 	m.cfg = cfg
 	m.stat()
 	if changed {
@@ -347,7 +339,7 @@ func parseAndPrepare(data []byte) (*Config, string, bool, error) {
 		return nil, "", false, err
 	}
 	cfg.Cooldown.normalize() // 兼容旧版 duration_minutes 字段
-	cfg.JWT.normalize()      // 兼容 expire_hours 0/负值（v1.0.0 L2）
+	cfg.JWT.normalize()      // 兼容 expire_hours 0/负值
 	// 需求 5.2.3/9.1：手动清空 admin.password / jwt.secret 后自动重新生成
 	pwd, changed, err := cfg.GenerateInitialCredentials()
 	if err != nil {
@@ -356,7 +348,7 @@ func parseAndPrepare(data []byte) (*Config, string, bool, error) {
 	return cfg, pwd, changed, nil
 }
 
-// warnWeakJWTSecret 对手写弱 JWT secret 打印告警（v1.0.0 S13）：
+// warnWeakJWTSecret 对手写弱 JWT secret 打印告警：
 // HS256 的安全性完全依赖 secret 强度，弱 secret 可被持有任一有效 token 的
 // 攻击者离线字典爆破后伪造管理 token。不拒绝启动（避免破坏既有部署），仅提示。
 func warnWeakJWTSecret(cfg *Config) {
@@ -421,7 +413,7 @@ func (m *Manager) saveLocked(cfg *Config) error {
 		os.Remove(tmpName)
 		return err
 	}
-	// v1.0.0（S12）：rename 前先 fsync——掉电/崩溃时 rename 的元数据可能先于数据块
+	// rename 前先 fsync——掉电/崩溃时 rename 的元数据可能先于数据块
 	// 持久化，config.yml（含全部上游 Key 与 bcrypt 哈希）会损坏成空文件或半新半旧内容。
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
@@ -436,13 +428,20 @@ func (m *Manager) saveLocked(cfg *Config) error {
 		os.Remove(tmpName)
 		return err
 	}
+	// rename 后同步目录项：使「改名」这一元数据变更落盘，否则掉电/崩溃后目录项
+	// 可能未持久化，config.yml（含全部上游 Key 与 bcrypt 哈希）会缺失或指向旧文件。
+	// Windows 对目录句柄 Sync 返回错误（NTFS 无此语义），忽略即可。
+	if d, derr := os.Open(dir); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 	m.stat()
 	return nil
 }
 
 // Watch 启动热加载轮询（每 2 秒检测文件变更）。
 // 变更检测 → 读文件 → 解析 → 替换 m.cfg 全程在锁内完成（读文件与 YAML 解析为毫秒级，
-// 锁竞争极低）：与 Update（管理界面保存）完全互斥，消除旧实现中
+// 锁竞争极低）：与 Update（管理界面保存）完全互斥，消除中
 // "外部编辑触发 Watch 处理期间，界面并发保存被旧文件内容覆盖丢失"的 write-skew 竞态。
 func (m *Manager) Watch() {
 	go func() {
@@ -469,9 +468,8 @@ func (m *Manager) Watch() {
 				m.lastSize = fi.Size()
 				data, err := os.ReadFile(m.path)
 				if err != nil {
-					// v1.0.0（S9）：回滚 mtime 标记让下轮 tick 重试，并打印告警——
-					// 旧实现已消费 mtime 且静默 continue，本次外部编辑永久错过且无日志可查
-					//（与 L6 修复的“误以为改了实际没改”同类问题，失败点更靠前）。
+					// 回滚 mtime 标记让下轮 tick 重试，并打印告警——若已消费 mtime
+					// 且静默 continue，本次外部编辑将永久错过且无日志可查。
 					// 瞬时失败（编辑器原子替换中间态、文件锁）重试可自愈。
 					m.lastMod, m.lastSize = prevMod, prevSize
 					fmt.Printf("[hot-reload] 读取配置文件失败，保持原配置，下轮重试: %v\n", err)
@@ -480,13 +478,20 @@ func (m *Manager) Watch() {
 				}
 				cfg, pwd, credChanged, err := parseAndPrepare(data)
 				if err != nil {
-					// v1.0.0（L6）：解析失败不再静默——保持旧配置是安全的，但必须让用户
-					// 知道热加载未生效（否则误以为改了实际没改，与可排查性要求相悖）。
-					// 解析失败不回滚 mtime：内容坏重试无意义，用户修复后 mtime 再变会重新触发。
-					fmt.Printf("[hot-reload] 配置解析失败，保持原配置不变: %v\n", err)
+					// 解析失败回滚 mtime 标记，让下轮 tick 持续重试：用户修复坏文件时
+					// 若工具保留原 mtime（touch -t 回填、同步工具固定时间戳），不回滚
+					// 则本次修复被静默忽略且无自愈路径。回滚的代价是每 2 秒读一次文件
+					// （毫秒级），因此对连续相同错误去重打印避免刷屏。
+					// 保持旧配置是安全的，但必须让用户知道热加载未生效。
+					if err.Error() != m.lastParseErr {
+						fmt.Printf("[hot-reload] 配置解析失败，保持原配置不变（每 2 秒重试）: %v\n", err)
+						m.lastParseErr = err.Error()
+					}
+					m.lastMod, m.lastSize = prevMod, prevSize
 					m.mu.Unlock()
 					continue
 				}
+				m.lastParseErr = ""
 				m.cfg = cfg
 				if credChanged {
 					// 写回文件持久化；saveLocked 会更新 lastMod，不会再次触发热加载
@@ -511,7 +516,7 @@ func (m *Manager) Watch() {
 	}()
 }
 
-// AbsorbExternalChange 吸收外部编辑产生的配置变更（v1.0.0 M7）。
+// AbsorbExternalChange 吸收外部编辑产生的配置变更。
 // 由 State.Mutate 在写盘前调用：检测到文件自上次加载后被外部修改时，先把文件内容
 // 重新加载进内存（含归一化与凭证生成），使后续基于内存快照的保存包含外部变更——
 // 消除「外部编辑落盘后 2 秒内（Watch 下一 tick 前）界面保存把外部变更静默覆盖」的
@@ -553,7 +558,7 @@ func (m *Manager) AbsorbExternalChange() (bool, error) {
 	return true, nil
 }
 
-// Stop 停止热加载轮询（幂等：重复调用不会 panic，与 core.State.Stop 同防护风格，v1.0.0 L4）。
+// Stop 停止热加载轮询（幂等：重复调用不会 panic，与 core.State.Stop 同防护风格，L4）。
 func (m *Manager) Stop() {
 	select {
 	case <-m.stopCh:

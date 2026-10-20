@@ -1,10 +1,12 @@
-﻿// proxy_test.go：输出速率与生成耗时计算单元测试。
+// proxy_test.go：输出速率与生成耗时计算单元测试。
 package proxy
 
 import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"llmproxy/internal/config"
 )
 
 func TestOutputTokensPerSecond(t *testing.T) {
@@ -30,7 +32,7 @@ func TestOutputTokensPerSecond(t *testing.T) {
 }
 
 func TestGenerationMs(t *testing.T) {
-	// 口径（v1.0.0）：流式 = 末字节 - 上游首字节（模型实际吐字窗口）；
+	// 口径：流式 = 末字节 - 上游首字节（模型实际吐字窗口）；
 	// 非流式 = 整个请求耗时；流式异常（无首字节/末字节早于首字节）回退总耗时。
 	cases := []struct {
 		name                           string
@@ -56,7 +58,7 @@ func TestGenerationMs(t *testing.T) {
 	}
 }
 
-// TestMaskAuthHeaders 上游请求头认证字段脱敏（v1.0.0 日志结构）。
+// TestMaskAuthHeaders 上游请求头认证字段脱敏。
 func TestMaskAuthHeaders(t *testing.T) {
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
@@ -83,5 +85,49 @@ func TestMaskAuthHeaders(t *testing.T) {
 	// 短值全遮蔽
 	if got := maskSecret("short-key"); got != "*********" {
 		t.Errorf("短值应全遮蔽: %s", got)
+	}
+}
+
+// TestShuffledKeysFiltersDisabled 停用 Key 不参与供应商内洗牌 / 重试：
+// 5 条 Key 中 2 条停用，shuffledKeys 输出只含 3 条且全为 Enabled=true。
+// 全部停用时返回 nil（调用方应把整供应商视为无可用 Key，跳过该供应商）。
+func TestShuffledKeysFiltersDisabled(t *testing.T) {
+	p := &config.Provider{
+		APIKeys: []config.ProviderAPIKey{
+			{ID: "k1", Key: "sk-a", Enabled: true},
+			{ID: "k2", Key: "sk-b", Enabled: false},
+			{ID: "k3", Key: "sk-c", Enabled: true},
+			{ID: "k4", Key: "sk-d", Enabled: false},
+			{ID: "k5", Key: "sk-e", Enabled: true},
+		},
+	}
+	got := shuffledKeys(p)
+	if len(got) != 3 {
+		t.Fatalf("shuffledKeys 应只保留 3 条启用 Key, got %d: %+v", len(got), got)
+	}
+	for _, k := range got {
+		if !k.Enabled {
+			t.Errorf("shuffledKeys 不应返回停用 Key: %+v", k)
+		}
+	}
+	seen := map[string]bool{}
+	for _, k := range got {
+		seen[k.ID] = true
+	}
+	for _, must := range []string{"k1", "k3", "k5"} {
+		if !seen[must] {
+			t.Errorf("shuffledKeys 缺启用 Key %s, got %+v", must, got)
+		}
+	}
+
+	// 全部停用 → 返回 nil
+	allDisabled := &config.Provider{
+		APIKeys: []config.ProviderAPIKey{
+			{ID: "k1", Key: "sk-a", Enabled: false},
+			{ID: "k2", Key: "sk-b", Enabled: false},
+		},
+	}
+	if got := shuffledKeys(allDisabled); got != nil {
+		t.Errorf("全部停用应返回 nil, got %+v", got)
 	}
 }

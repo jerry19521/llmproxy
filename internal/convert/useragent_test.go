@@ -1,11 +1,11 @@
-﻿package convert
+package convert
 
 import (
 	"net/http"
 	"testing"
 )
 
-// v1.0.0 回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
+// 回归测试：
 // 全局默认 User-Agent（default_user_agent）——部分上游网关（腾讯元宝 bot）
 // 对 Go 默认 UA 返回 403「错误请求」，X-Forwarded-For 正确也无效。
 

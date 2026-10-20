@@ -15,7 +15,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// TestSettingsLogEnabledRoundTrip v1.0.0 回归：日志记录开关经 PUT /api/settings
+// TestSettingsLogEnabledRoundTrip 日志记录开关经 PUT /api/settings
 // 写入 → 快照生效 → GET 回读 → yml 持久化全链路；不带 enabled 字段的 PUT 不改动现有值。
 func TestSettingsLogEnabledRoundTrip(t *testing.T) {
 	dir := t.TempDir()
@@ -47,7 +47,7 @@ func TestSettingsLogEnabledRoundTrip(t *testing.T) {
 		return got.Log.Enabled
 	}
 
-	// 默认关闭（v1.0.0：默认不记录，旧配置升级同口径）
+	// 默认关闭（默认不记录，旧配置同口径）
 	if getLogEnabled(t) {
 		t.Fatal("默认应关闭日志记录")
 	}
@@ -93,7 +93,7 @@ func TestSettingsLogEnabledRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLogsClearRecreate v1.0.0 回归：清空日志走删除数据库文件重建路径——
+// TestLogsClearRecreate 清空日志走删除数据库文件重建路径——
 // 返回删除前行数、新库为空且可写、Server 引用已替换为新库。
 func TestLogsClearRecreate(t *testing.T) {
 	dir := t.TempDir()

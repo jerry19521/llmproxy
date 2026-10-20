@@ -1,10 +1,10 @@
 ﻿// ===== 统计分析视图 =====
 Views.Statistics = {
   charts: [],
-  querySeq: 0, // 同页查询序号（v1.0.0，F8）
+  querySeq: 0, // 同页查询序号
 
   async render(el) {
-    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
+    const seq = App.renderSeq; // 路由切换守卫
     this.destroyCharts();
     el.innerHTML = `
       <div class="card">
@@ -40,16 +40,16 @@ Views.Statistics = {
     this.charts = [];
   },
 
-  // destroy 视图卸载钩子（v1.0.0，F9）：离开统计页时销毁全部 Chart 实例，
-  // 不再依赖“下次进入统计页时才回收”的滞后清理（避免 detached canvas 与 ResizeObserver 滞留）。
+  // destroy 视图卸载钩子：离开统计页时销毁全部 Chart 实例，
+  // 不依赖“下次进入统计页时才回收”的滞后清理（避免 detached canvas 与 ResizeObserver 滞留）。
   destroy() {
     this.destroyCharts();
   },
 
   async loadData() {
-    const seq = App.renderSeq; // M9（v1.0.0）：重复查询/页面切换守卫
-    const reqSeq = ++this.querySeq; // v1.0.0（F8）：同页多次查询的请求序号，慢的旧响应不再覆盖新结果
-    this.destroyCharts(); // L13 修复：每次查询前销毁旧实例，防止重复查询时 Chart 实例（含 ResizeObserver）泄漏累积
+    const seq = App.renderSeq; // 重复查询/页面切换守卫
+    const reqSeq = ++this.querySeq; // 同页多次查询的请求序号，慢的旧响应不覆盖新结果
+    this.destroyCharts(); // 每次查询前销毁旧实例，防止重复查询时 Chart 实例（含 ResizeObserver）泄漏累积
     const body = document.getElementById('st-body');
     if (!body) return;
     const rangeSel0 = document.getElementById('st-range');
@@ -60,7 +60,7 @@ Views.Statistics = {
       const cs = document.getElementById('st-cs').value;
       const ce = document.getElementById('st-ce').value;
       if (!cs || !ce) { showToast('请选择自定义日期范围', 'err'); return; }
-      // v1.0.0（F12）：反向区间直接提示，不再静默返回全零数据
+      // 反向区间直接提示，不静默返回全零数据
       if (cs > ce) { showToast('开始日期不能晚于结束日期', 'err'); return; }
       q.set('custom_start', cs);
       q.set('custom_end', ce);
@@ -73,7 +73,7 @@ Views.Statistics = {
       if (seq === App.renderSeq && reqSeq === this.querySeq) body.innerHTML = `<div class="card"><h3>加载失败</h3><p class="muted">${U.esc(e.message)}</p></div>`;
       return;
     }
-    // v1.0.0（F8）：页面已切换或已有更新的查询时，丢弃本次响应
+    // 页面已切换或已有更新的查询时，丢弃本次响应
     if (seq !== App.renderSeq || reqSeq !== this.querySeq) return;
     const s = d.summary || {};
     body.innerHTML = `

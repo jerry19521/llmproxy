@@ -37,7 +37,7 @@ func totalSize(paths ...string) int64 {
 	return sum
 }
 
-// TestCountAndRecreate v1.0.0 回归：Count 行数统计 + Recreate 删除库文件重建——
+// TestCountAndRecreate Count 行数统计 + Recreate 删除库文件重建：
 // 新库为空且可继续写入、旧数据全部消失、磁盘空间实际释放（重建后文件远小于重建前）。
 func TestCountAndRecreate(t *testing.T) {
 	dir := t.TempDir()
@@ -126,7 +126,7 @@ func TestRecreateOnFreshStore(t *testing.T) {
 }
 
 // TestRecreateConcurrentCloseSafety Recreate 期间并发 WriteAsync 不 panic
-// （旧库 closed 后 WriteAsync 静默丢弃，H1 语义保持）。
+// （旧库 closed 后 WriteAsync 静默丢弃，并发安全语义保持）。
 func TestRecreateConcurrentCloseSafety(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "data.db")

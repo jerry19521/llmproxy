@@ -1,4 +1,4 @@
-﻿package convert
+package convert
 
 import (
 	"encoding/json"
@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// v1.0.0 修复回归：流式发射器与解析器的异常路径（M7 / M8）。
+// 流式发射器与解析器的异常路径。
 
-// TestAnthropicEmitterIndexUnique M7 回归：上游先发工具调用、后发文本（或文本→工具→文本
+// TestAnthropicEmitterIndexUnique M7 上游先发工具调用、后发文本（或文本→工具→文本
 // 交替）时，Anthropic 客户端侧的 content_block_start 索引必须唯一且单调递增。
-// 旧实现文本块硬编码 index 0，与工具块（从 nBlocks 顺序分配）冲突，
+// 文本块硬编码 index 0，与工具块（从 nBlocks 顺序分配）冲突，
 // 严格 Anthropic SDK 解析失败断连。
 func TestAnthropicEmitterIndexUnique(t *testing.T) {
 	conv := NewStreamConverter(FormatOpenAI, FormatAnthropic, "m")
@@ -60,7 +60,7 @@ func TestAnthropicEmitterIndexUnique(t *testing.T) {
 	seen := map[float64]bool{}
 	for _, i := range starts {
 		if seen[i] {
-			t.Fatalf("content_block_start 索引重复: %v（旧 bug：文本块硬编码 index 0 与工具块冲突）", starts)
+			t.Fatalf("content_block_start 索引重复: %v（文本块硬编码 index 0 与工具块冲突）", starts)
 		}
 		seen[i] = true
 	}
@@ -71,7 +71,7 @@ func TestAnthropicEmitterIndexUnique(t *testing.T) {
 	}
 }
 
-// TestResponsesStreamErrorEvent M8 回归：Responses 上游流中 type=error 事件必须
+// TestResponsesStreamErrorEvent M8 Responses 上游流中 type=error 事件必须
 // 归一为 evError（未开始写客户端时可重试），不得被静默丢弃并在 EOF 时伪造成功终止流。
 func TestResponsesStreamErrorEvent(t *testing.T) {
 	conv := NewStreamConverter(FormatResponses, FormatOpenAI, "m")
@@ -87,14 +87,14 @@ func TestResponsesStreamErrorEvent(t *testing.T) {
 		}
 	}
 	if gotErr == nil {
-		t.Fatal("type=error 事件必须触发错误返回（旧 bug：无处理分支，错误被吞并在 EOF 伪造成功流）")
+		t.Fatal("type=error 事件必须触发错误返回（无处理分支会导致错误被吞并在 EOF 伪造成功流）")
 	}
 	if !strings.Contains(gotErr.Error(), "boom") {
 		t.Fatalf("错误消息应携带上游 message，实际: %v", gotErr)
 	}
 }
 
-// TestResponsesStreamFailedEventDetail M8 回归：response.failed 事件的错误详情在
+// TestResponsesStreamFailedEventDetail M8 response.failed 事件的错误详情在
 // response.error 内（官方协议），应正确提取而非退化为固定文案。
 func TestResponsesStreamFailedEventDetail(t *testing.T) {
 	conv := NewStreamConverter(FormatResponses, FormatOpenAI, "m")
@@ -113,7 +113,7 @@ func TestResponsesStreamFailedEventDetail(t *testing.T) {
 	}
 }
 
-// TestFallbackUsageJSONExtraction M5② 回归：伪流式兜底（上游对 stream=true 一次性返回
+// TestFallbackUsageJSONExtraction M5② 伪流式兜底（上游对 stream=true 一次性返回
 // 完整 JSON）时 usage 应可提取——SSE 模式提取全 0 时回退整体 JSON 提取。
 func TestFallbackUsageJSONExtraction(t *testing.T) {
 	body := []byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}`)

@@ -1,4 +1,4 @@
-﻿// proxy_integration_test.go：跨格式代理转发的集成测试。
+// proxy_integration_test.go：跨格式代理转发的集成测试。
 // 使用 httptest 模拟三种格式的上游供应商，验证 3 客户端格式 × 3 供应商类型的全部组合、
 // 流式合成、工具调用转换、认证兼容（x-api-key）、错误格式与 /v1/models。
 package proxy
@@ -303,7 +303,7 @@ func newTestStack(t *testing.T, upstreamURL string) (*Handler, *core.State, *con
 			return &config.Provider{
 				ID: name, Name: name, BaseURL: upstreamURL + "/v1", APIType: apiType,
 				Enabled: true, Weight: 1,
-				APIKeys: []config.ProviderAPIKey{{ID: "k-" + name, Key: upstreamKey}},
+				APIKeys: []config.ProviderAPIKey{{ID: "k-" + name, Key: upstreamKey, Enabled: true}},
 				Models: []config.ProviderModel{{Name: model, Aliases: func() []string {
 					if alias != "" {
 						return []string{alias}
@@ -322,7 +322,7 @@ func newTestStack(t *testing.T, upstreamURL string) (*Handler, *core.State, *con
 			ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true,
 			IPWhitelist: []string{"*"}, Models: []string{},
 		}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -727,11 +727,11 @@ func TestLogWrittenWithUsage(t *testing.T) {
 		ns.Providers = []*config.Provider{{
 			ID: "p1", Name: "p-anthropic", BaseURL: up.URL, APIType: convert.FormatAnthropic,
 			Enabled: true, Weight: 1,
-			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey}},
+			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey, Enabled: true}},
 			Models:  []config.ProviderModel{{Name: "m-anthropic"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -842,11 +842,11 @@ func TestStreamingGenerationRate(t *testing.T) {
 		ns.Providers = []*config.Provider{{
 			ID: "p1", Name: "p-openai", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
-			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey}},
+			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey, Enabled: true}},
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -896,7 +896,7 @@ func TestStreamingGenerationRate(t *testing.T) {
 	}
 }
 
-// TestFakeStreamingRate 伪流式（缓冲型）上游回归：上游把整个 SSE 缓冲到最后一次性发出时，
+// TestFakeStreamingRate 伪流式（缓冲型）上游上游把整个 SSE 缓冲到最后一次性发出时，
 // 响应体一次性到达（ReadChunks=1），生成耗时回退为总耗时，输出速率仍应正常显示（>0），
 // 而不是因 gen=0 被记为 0（前端显示 -）。
 func TestFakeStreamingRate(t *testing.T) {
@@ -927,11 +927,11 @@ func TestFakeStreamingRate(t *testing.T) {
 		ns.Providers = []*config.Provider{{
 			ID: "p1", Name: "p-fake", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
-			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey}},
+			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey, Enabled: true}},
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -963,7 +963,7 @@ func TestFakeStreamingRate(t *testing.T) {
 	if l.Status != "success" || l.CompletionTokens != 100 {
 		t.Fatalf("伪流式日志状态或输出 token 异常: %+v", l)
 	}
-	// 修复点：一次性到达时回退总耗时，速率可正常计算（旧实现 gen=0 → 速率 0 → 前端显示 -）
+	// 一次性到达时回退总耗时，速率可正常计算（否则 gen=0 → 速率 0 → 前端显示 -）
 	if l.GenerationMs <= 0 {
 		t.Errorf("伪流式生成耗时不应为 0（应回退总耗时）: gen=%d dur=%d", l.GenerationMs, l.DurationMs)
 	}
@@ -1122,7 +1122,7 @@ func TestCooldownRetryThreshold(t *testing.T) {
 	}
 }
 
-// ===== 流式实时转发（v1.0.0：stream=true 边收边转发）=====
+// ===== 流式实时转发（stream=true 边收边转发）=====
 
 // startSlowStreamUpstream 启动慢速流式 mock 上游（openai 格式）：
 // TTFT 200ms，之后每 300ms 一帧，共 3 帧 text + finish，总时长约 1100ms+。
@@ -1179,7 +1179,7 @@ func readRealtimeSSE(t *testing.T, ts *httptest.Server, path, body string) (time
 }
 
 // TestStreamingRealtimePassthrough 同格式流式实时转发：客户端首字节应远早于流总时长
-// （旧全缓冲实现下首字节须等全部生成完成，与本用例断言不符）。
+// （全缓冲实现下首字节须等全部生成完成，与本用例断言不符）。
 func TestStreamingRealtimePassthrough(t *testing.T) {
 	up := startSlowStreamUpstream(t)
 	defer up.Close()
@@ -1269,13 +1269,13 @@ func TestStreamFirstEventErrorRetry(t *testing.T) {
 			ID: "p1", Name: "p-2keys", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
 			APIKeys: []config.ProviderAPIKey{
-				{ID: "k1", Key: "sk-first-key"},
-				{ID: "k2", Key: upstreamKey},
+				{ID: "k1", Key: "sk-first-key", Enabled: true},
+				{ID: "k2", Key: upstreamKey, Enabled: true},
 			},
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1326,11 +1326,11 @@ func TestStreamClientDisconnect(t *testing.T) {
 		ns.Providers = []*config.Provider{{
 			ID: "p1", Name: "p-openai", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
-			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey}},
+			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey, Enabled: true}},
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1364,7 +1364,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 	if l.Status != "failure" {
 		t.Fatalf("客户端断开应记 failure: %+v", l)
 	}
-	// v1.0.0 起，客户端断开在流转发阶段产生的错误被统一归类：
+	// 客户端断开在流转发阶段产生的错误被统一归类：
 	// watchdog 关闭上游 Body → "客户端断开"；或写入先失败 → "写入客户端失败: ..."。
 	if l.ErrorMsg == nil {
 		t.Fatalf("客户端断开后日志应有错误信息: %+v", l)
@@ -1376,7 +1376,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 }
 
 // TestCoolingDownLogConsistency 冷却池全入池场景：日志 error_msg 与返回给客户端的消息一致
-// （修复 writeFailureLog 消息不一致：旧实现日志误记 all providers failed (no provider attempted)）。
+//（writeFailureLog 消息应与客户端消息对齐，不应误记 all providers failed (no provider attempted)）。
 func TestCoolingDownLogConsistency(t *testing.T) {
 	up := startAlwaysFailUpstream(t)
 	defer up.Close()
@@ -1396,11 +1396,11 @@ func TestCoolingDownLogConsistency(t *testing.T) {
 		ns.Providers = []*config.Provider{{
 			ID: "p1", Name: "p-fail", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
-			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey}},
+			APIKeys: []config.ProviderAPIKey{{ID: "k1", Key: upstreamKey, Enabled: true}},
 			Models:  []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 		ns.CooldownEnabled = true
 		ns.CooldownSeconds = 60
 		ns.CooldownRetryCount = 1

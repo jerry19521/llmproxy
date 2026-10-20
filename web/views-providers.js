@@ -10,7 +10,7 @@ function apiTypeLabel(t) {
 // ===== 供应商管理视图 =====
 Views.Providers = {
   async renderList(el) {
-    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
+    const seq = App.renderSeq; // 路由切换守卫
     el.innerHTML = '<div class="muted">加载中...</div>';
     try {
       const res = await API.get('/api/providers');
@@ -67,17 +67,17 @@ Views.Providers = {
         };
       });
     } catch (e) {
-      if (seq !== App.renderSeq) return; // v1.0.0（F2）：页面已切换时迟到的失败响应不覆盖新页面
+      if (seq !== App.renderSeq) return; // 页面已切换时迟到的失败响应不覆盖新页面
       el.innerHTML = `<div class="card"><h3>加载失败</h3><p class="muted">${U.esc(e.message)}</p></div>`;
     }
   },
 
   // ===== 新增 / 修改页 =====
   async renderEdit(el, id) {
-    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
+    const seq = App.renderSeq; // 路由切换守卫
     const F = {
       id: id, name: '', base_url: '', api_type: 'openai', weight: 1, enabled: true,
-      api_keys: [],   // {id, key}（key 可能为脱敏值）
+      api_keys: [],   // {id, key, enabled}（key 可能为脱敏值，enabled 必填）
       headers: [],    // {key, value}
       models: [],     // {name, aliases: "a,b"}
       testModel: '',
@@ -88,7 +88,7 @@ Views.Providers = {
         const p = await API.get(`/api/providers/${id}`);
         if (seq !== App.renderSeq) return; // 页面已切换：丢弃过期响应
         F.name = p.name; F.base_url = p.base_url; F.api_type = p.api_type || 'openai'; F.weight = p.weight || 1; F.enabled = p.enabled;
-        F.api_keys = (p.api_keys || []).map(k => ({ id: k.id, key: k.key }));
+        F.api_keys = (p.api_keys || []).map(k => ({ id: k.id, key: k.key, enabled: k.enabled !== false }));
         F.headers = (p.headers || []).map(h => ({ key: h.key, value: h.value }));
         F.models = (p.models || []).map(m => ({ name: m.name, aliases: (m.aliases || []).join(',') }));
       } catch (e) {
@@ -96,7 +96,7 @@ Views.Providers = {
         return;
       }
     }
-    const ctx = { F, tmpSeq: 0, seq }; // seq：本页渲染序号（v1.0.0 F7：异步动作完成后校验，页面已切换不再弹窗/写回）
+    const ctx = { F, tmpSeq: 0, seq }; // seq：本页渲染序号（异步动作完成后校验，页面已切换则不弹窗/写回）
     this.drawForm(el, ctx);
   },
 
@@ -175,7 +175,7 @@ Views.Providers = {
     $('#f-weight').oninput = e => F.weight = parseInt(e.target.value) || 1;
     $('#f-enabled').onchange = e => F.enabled = e.target.checked;
 
-    $('#add-key').onclick = () => { ctx.tmpSeq++; F.api_keys.push({ id: 'tmp-' + ctx.tmpSeq, key: '' }); this.drawKeyRows(el, ctx); };
+    $('#add-key').onclick = () => { ctx.tmpSeq++; F.api_keys.push({ id: 'tmp-' + ctx.tmpSeq, key: '', enabled: true }); this.drawKeyRows(el, ctx); };
     $('#add-header').onclick = () => { F.headers.push({ key: '', value: '' }); this.drawHeaderRows(el, ctx); };
     $('#add-model').onclick = () => { F.models.push({ name: '', aliases: '' }); this.drawModelRows(el, ctx); };
     $('#fetch-models').onclick = () => this.fetchModels(el, ctx);
@@ -206,10 +206,15 @@ Views.Providers = {
       const resultHTML = r
         ? `${badgeKeyTest(r.success)} ${r.success ? '<button class="btn-link" data-view-key="' + U.esc(k.id) + '">查看详情</button>' : `<span class="muted" title="${U.esc(r.error)}">${U.esc((r.error || '').slice(0, 30))}</span> <button class="btn-link" data-view-key="${U.esc(k.id)}">详情</button>`}`
         : '';
+      // 已停用 Key 输入框置灰 + 半透明，视觉与路由层一致
+      const disabledCls = k.enabled === false ? ' is-disabled' : '';
       const div = document.createElement('div');
-      div.className = 'row-item';
+      div.className = 'row-item' + disabledCls;
       div.innerHTML = `
         <input type="text" data-ki="${i}" value="${U.esc(k.key)}" placeholder="sk-..." autocomplete="off">
+        <label class="switch" title="启用 / 停用该 Key">
+          <input type="checkbox" data-ke="${i}" ${k.enabled === false ? '' : 'checked'}><span class="slider"></span>
+        </label>
         <button class="btn btn-sm btn-ghost" data-test-key="${i}" title="测试该 Key">测试</button>
         <span class="key-test-result">${resultHTML}</span>
         <button class="btn btn-sm btn-ghost danger" style="color:var(--danger)" data-del-key="${i}">删除</button>`;
@@ -217,6 +222,9 @@ Views.Providers = {
     });
     box.querySelectorAll('input[data-ki]').forEach(inp => {
       inp.oninput = () => { F.api_keys[+inp.dataset.ki].key = inp.value; };
+    });
+    box.querySelectorAll('input[data-ke]').forEach(inp => {
+      inp.onchange = () => { F.api_keys[+inp.dataset.ke].enabled = inp.checked; this.drawKeyRows(el, ctx); };
     });
     box.querySelectorAll('button[data-del-key]').forEach(b => {
       b.onclick = () => { F.api_keys.splice(+b.dataset.delKey, 1); this.drawKeyRows(el, ctx); };
@@ -305,7 +313,7 @@ Views.Providers = {
   async save(el, ctx) {
     const F = ctx.F;
     if (this.hasDup(F)) { showToast('同一供应商内模型名称不能重复', 'err'); return; }
-    // v1.0.0（F6）：保存期间禁用按钮，防双击重复提交（新增页双击会创建两条同名记录）
+    // 保存期间禁用按钮，防双击重复提交（新增页双击会创建两条同名记录）
     const btn = el.querySelector('#btn-save');
     if (btn.disabled) return;
     btn.disabled = true;
@@ -319,7 +327,7 @@ Views.Providers = {
   async doSave(F) {
     const body = {
       name: F.name, base_url: F.base_url, api_type: F.api_type, weight: F.weight, enabled: F.enabled,
-      api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key })),
+      api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key, enabled: k.enabled !== false })),
       headers: F.headers.filter(h => h.key.trim()),
       models: F.models.filter(m => m.name.trim()).map(m => ({ name: m.name.trim(), aliases: m.aliases })),
     };
@@ -343,18 +351,18 @@ Views.Providers = {
     if (!F.base_url.trim()) { showToast('请先填写基础地址', 'err'); return; }
     if (!F.api_keys.some(k => k.key.trim())) { showToast('请先添加至少一条 API Key', 'err'); return; }
     try {
-      // v1.0.0（F1）：编辑页与新增页统一走 POST 表单模式——使用表单当前填写的
+      // 编辑页与新增页统一走 POST 表单模式——使用表单当前填写的
       // 基础地址 / Key / 请求头（与同页测试按钮“无需先保存”语义一致）；
       // 编辑页表单中的脱敏 Key（含 ***）由后端按 provider_id + key id 恢复完整值。
       const res = await API.post('/api/providers/fetch-models', {
         provider_id: F.id || '',
         base_url: F.base_url.trim(),
         api_type: F.api_type,
-        api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key })),
+        api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key, enabled: k.enabled !== false })),
         headers: F.headers.filter(h => h.key.trim()),
       });
       const models = res.models || [];
-      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应（F7）
+      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应
       this.showFetchModal(el, ctx, models);
     } catch (e) {
       showToast('获取模型失败：' + e.message, 'err');
@@ -408,12 +416,16 @@ Views.Providers = {
         api_type: F.api_type,
         // id 原样提交（tmp-N 仅存在于未保存表单，用于 key_ids 过滤与测试结果关联；
         // 后端仅在 id 为空时生成 key-N 兜底；正式 UUID 由保存时的后端生成）
-        api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key })),
+        api_keys: F.api_keys.map(k => ({ id: k.id, key: k.key, enabled: k.enabled !== false })),
         headers: F.headers.filter(h => h.key.trim()),
         model,
         key_ids: keyIds,
+        // 显式区分单条/批量：行内「测试」按钮 → single=true 保留对停用 Key 的排查能力；
+        // 「▶ 测试」批量按钮 → single=false 按 enabled 过滤。旧实现用 key_ids 长度推断，
+        // 在「单 Key 供应商批量测试」场景会误判为单条。
+        single: !!singleKeyId,
       });
-      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应（v1.0.0 F7）
+      if (ctx.seq !== App.renderSeq) return; // 页面已切换：丢弃迟到响应
       (res.results || []).forEach(r => { F.testResults[r.key_id] = r; });
       this.drawKeyRows(el, ctx);
       const okCount = (res.results || []).filter(r => r.success).length;

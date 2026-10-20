@@ -66,7 +66,7 @@ func TestRecordFailureThreshold(t *testing.T) {
 	}
 }
 
-// TestRecordFailureImmediate 阈值为 1 时一轮失败立即冷却（与 v1.5 前行为一致）。
+// TestRecordFailureImmediate 阈值为 1 时一轮失败立即冷却（保持阈值最小为 1 时即失效的兜底语义）。
 func TestRecordFailureImmediate(t *testing.T) {
 	p := NewCooldownPool()
 	if cooled := p.RecordFailure("p1", "m1", 60, 1); !cooled {

@@ -1,10 +1,10 @@
 ﻿// ===== 调用日志视图 =====
 Views.Logs = {
   state: { page: 1, pageSize: 100 },
-  detailSeq: 0, // v1.0.0（F2）：详情弹窗并发序号，防止慢的旧详情响应覆盖后打开的详情
+  detailSeq: 0, // 详情弹窗并发序号，防止慢的旧详情响应覆盖后打开的详情
 
   async render(el) {
-    const seq = App.renderSeq; // M9（v1.0.0）：路由切换守卫
+    const seq = App.renderSeq; // 路由切换守卫
     el.innerHTML = '<div class="card"><div class="muted">加载中...</div></div>';
     const st = this.state;
     st.page = 1;
@@ -79,7 +79,7 @@ Views.Logs = {
 
   async loadTable() {
     const st = this.state;
-    const seq = App.renderSeq; // C10 请求序号守卫（v1.0.0）：旧响应不再覆盖新页面（与需求文档 v1.0.0 小节编号统一）
+    const seq = App.renderSeq; // 请求序号守卫：旧响应不覆盖新页面
     const box = document.getElementById('logs-table');
     if (!box) return;
     const q = new URLSearchParams();
@@ -165,7 +165,7 @@ Views.Logs = {
     }).catch(e => showToast('删除失败：' + e.message, 'err'));
   },
 
-  // 清空全部日志（v1.0.0：后端删除日志数据库文件并重建，即时释放磁盘空间）
+  // 清空全部日志（后端删除日志数据库文件并重建，即时释放磁盘空间）
   deleteAll() {
     if (!confirmDialog('确认删除全部调用日志？将删除日志数据库文件并重新生成（不可恢复），以释放磁盘空间。')) return;
     API.del('/api/logs').then(res => {
@@ -175,7 +175,7 @@ Views.Logs = {
     }).catch(e => showToast('删除失败：' + e.message, 'err'));
   },
 
-  // ===== 调用详情（v1.0.0：三标签页 + 请求/响应体结构化解析）=====
+  // ===== 调用详情（三标签页 + 请求/响应体结构化解析）=====
 
   // 详情渲染器工厂：管理「显示全部 / 复制」全文注册表与事件绑定。
   // 全文存闭包数组（不进 DOM attribute），每个详情弹窗独立实例。
@@ -193,7 +193,7 @@ Views.Logs = {
         let shown = text;
         if (over) shown = text.slice(0, o.maxLen) + '\n\n...(预览已截断，全文共 ' + text.length.toLocaleString() + ' 字符)';
         const inner = o.hl ? LogParser.highlightJSON(shown) : U.esc(shown);
-        // v1.0.0（F8）：移除无样式定义的 jcode 死类（style.css 从未定义该选择器）
+        // 不使用 jcode 类（style.css 未定义该选择器）
         return `<div class="code-block">
           <pre class="code"${over ? ` id="eb-${idx}"` : ''}>${inner}</pre>
           <div class="expand-actions">
@@ -260,7 +260,7 @@ Views.Logs = {
         });
         scope.querySelectorAll('[data-eb-copy]').forEach(btn => {
           btn.onclick = async () => {
-            // v1.0.0（F3）：改用带降级的复制工具，非安全上下文（http://IP 访问）不再必然失败
+            // 带降级的复制工具：非安全上下文（http://IP 访问）有降级路径
             if (await U.copyText(texts[+btn.dataset.ebCopy])) showToast('已复制全文到剪贴板', 'ok');
             else showToast('复制失败：请手动选中复制', 'err');
           };
@@ -550,7 +550,7 @@ Views.Logs = {
       chips.push(`<span class="dmeta-item muted">${body.length.toLocaleString()} 字符</span>`);
     } else {
       const reason = parsed && parsed.reason;
-      // v1.0.0（F6）：SSE 流但帧格式未识别时如实标注，不再误标为「未识别 JSON」
+      // SSE 流但帧格式未识别时如实标注，不误标为「未识别 JSON」
       const label = truncated ? '已截断'
         : (reason === 'non-json' ? '非 JSON 内容'
           : (parsed && parsed.isSSE ? 'SSE 流（未识别格式）' : '未识别 JSON'));
@@ -571,7 +571,7 @@ Views.Logs = {
         const reason = parsed && parsed.reason;
         let fallback;
         if (reason === 'unknown-format' && parsed && parsed.isSSE) {
-          // v1.0.0（F6）：SSE 原文不是合法 JSON，JSON.parse 美化必然失败退回原文；
+          // SSE 原文不是合法 JSON，JSON.parse 美化必然失败退回原文；
           // 文案与行为对齐——如实声明按原文展示，且不做 JSON 高亮
           fallback = '<div class="plain-note">未识别的 SSE 流，按原文展示</div>' + R.code(body, { maxLen: 60000, hl: false });
         } else if (reason === 'unknown-format') {
@@ -616,8 +616,8 @@ Views.Logs = {
   },
 
   async showDetail(id) {
-    // v1.0.0（F2）：并发守卫——await 期间路由已切换、或用户已点击另一条日志时，
-    // 迟到的响应不再打开 Modal 覆盖新页面 / 后开的详情
+    // 并发守卫——await 期间路由已切换、或用户已点击另一条日志时，
+    // 迟到的响应不打开 Modal 覆盖新页面 / 后开的详情
     const seq = App.renderSeq;
     const reqSeq = ++this.detailSeq;
     let l;
@@ -629,7 +629,7 @@ Views.Logs = {
     if (seq !== App.renderSeq || reqSeq !== this.detailSeq) return;
     const attempts = Array.isArray(l.attempt_logs) ? l.attempt_logs : [];
     const upstreamURL = l.upstream_url || '';
-    // v1.0.0 起所有日志都是新结构：直接取 client_resp_body（LogParser 抽离为纯函数）。
+    // 日志表 client_resp_body 列必存在，直接取值（LogParser 抽离为纯函数）。
     // 不再回退到 resp_body——失败 / 客户端断开时 client_resp_body 为空即"未送达"，
     // resp_body 是上游响应、未必等于已写入客户端的内容。
     const clientRespBody = LogParser.clientRespBody(l);

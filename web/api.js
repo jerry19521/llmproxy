@@ -64,7 +64,7 @@ const U = {
   },
   randomKey() {
     // 拒绝采样（rejection sampling）消除取模偏差：256 % 62 = 8，
-    // 朴素 b % 62 会使前 8 个字符出现概率偏高约 1.6%（L14 修复，与后端 randomString 同口径）
+    // 朴素 b % 62 会使前 8 个字符出现概率偏高约 1.6%（与后端 randomString 同口径）
     const cs = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     const limit = 248; // 62 的最大整数倍且 ≤ 256，保证整除均匀
     let s = '';
@@ -79,9 +79,9 @@ const U = {
     }
     return 'sk-' + s;
   },
-  // copyText 复制文本到剪贴板（v1.0.0，F3 修复）：navigator.clipboard 仅在安全上下文
+  // copyText 复制文本到剪贴板：navigator.clipboard 仅在安全上下文
   // （https / localhost）可用，局域网 http://IP:9080 访问时不存在——降级为临时 textarea +
-  // execCommand 兼容方案，复制功能不再完全失效。
+  // execCommand 兼容方案，保证复制功能在非安全上下文下仍可用。
   async copyText(text) {
     if (navigator.clipboard && window.isSecureContext) {
       try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* 降级 */ }
@@ -98,7 +98,7 @@ const U = {
       return ok;
     } catch (e) { return false; }
   },
-  // fmtDateLocal ISO 时间 → 本地日期 YYYY-MM-DD（v1.0.0，F11 修复）：
+  // fmtDateLocal ISO 时间 → 本地日期 YYYY-MM-DD：
   // 有效期回填应按本地时区取日期，直接 slice(0,10) 取 UTC 日期会在西时区漂移一天。
   fmtDateLocal(iso) {
     if (!iso) return '';

@@ -27,10 +27,10 @@ type Snapshot struct {
 	CooldownRetryCount     int
 	UpstreamTimeoutSeconds int
 	TestMessage            string
-	DefaultUserAgent       string // 发往上游的默认 User-Agent（v1.0.0）：空=不设置（Go 默认）；供应商自定义头优先
+	DefaultUserAgent       string // 发往上游的默认 User-Agent：空=不设置（Go 默认）；供应商自定义头优先
 	IPTrustLevel           int
 	LogDBPath              string
-	LogEnabled             bool // 是否记录新的调用日志（v1.0.0）：false 时代理不写日志，已有日志仍可查询
+	LogEnabled             bool // 是否记录新的调用日志：false 时代理不写日志，已有日志仍可查询
 }
 
 // CooldownItem 冷却池条目。
@@ -167,7 +167,7 @@ func (p *CooldownPool) List(providerName func(id string) string) []CooldownItem 
 		}
 		parts := strings.SplitN(k, "|", 2)
 		if len(parts) != 2 {
-			continue // v1.0.0（C3）：防御顺序修正——先判长再取值，畸形键不 panic
+			continue // 畸形键应被忽略而非引发 panic：先判长再取值
 		}
 		item := CooldownItem{ProviderID: parts[0], Model: parts[1], Until: until}
 		if providerName != nil {
@@ -241,7 +241,7 @@ func (s *State) Reload() {
 		Providers:              cloneProviders(cfg.Providers),
 		APIKeys:                cloneAPIKeys(cfg.APIKeys),
 		Strategy:               cfg.Routing.Strategy,
-		CooldownEnabled:        cfg.Cooldown.EnabledVal(),
+		CooldownEnabled:        cfg.Cooldown.Enabled,
 		CooldownSeconds:        cfg.Cooldown.DurationSeconds,
 		CooldownRetryCount:     cfg.Cooldown.RetryCount,
 		UpstreamTimeoutSeconds: cfg.UpstreamTimeoutSeconds,
@@ -249,7 +249,7 @@ func (s *State) Reload() {
 		DefaultUserAgent:       cfg.DefaultUserAgent,
 		IPTrustLevel:           cfg.IPTrustLevel,
 		LogDBPath:              cfg.Log.DBPath,
-		LogEnabled:             cfg.Log.EnabledVal(),
+		LogEnabled:             cfg.Log.Enabled,
 	}
 	s.snap.Store(ns)
 }
@@ -259,26 +259,24 @@ func (ns *Snapshot) snapToConfig(cfg *config.Config) {
 	cfg.Providers = ns.Providers
 	cfg.APIKeys = ns.APIKeys
 	cfg.Routing.Strategy = ns.Strategy
-	cfg.Cooldown.Enabled = config.BoolPtr(ns.CooldownEnabled)
+	cfg.Cooldown.Enabled = ns.CooldownEnabled
 	cfg.Cooldown.DurationSeconds = ns.CooldownSeconds
 	cfg.Cooldown.RetryCount = ns.CooldownRetryCount
-	cfg.Cooldown.DurationMinutes = 0 // 已迁移为秒
 	cfg.UpstreamTimeoutSeconds = ns.UpstreamTimeoutSeconds
 	cfg.TestMessage = ns.TestMessage
 	cfg.DefaultUserAgent = ns.DefaultUserAgent
 	cfg.IPTrustLevel = ns.IPTrustLevel
 	cfg.Log.DBPath = ns.LogDBPath
-	cfg.Log.Enabled = config.BoolPtr(ns.LogEnabled) // 保存时显式落盘（false 也写出，避免旧库缺字段歧义）
+	cfg.Log.Enabled = ns.LogEnabled
 }
 
 // Mutate 在锁内对快照副本执行 mutator，提交新快照并同步写 config.yml。
 func (s *State) Mutate(mutator func(*Snapshot)) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	// v1.0.0（M7）：保存前吸收外部编辑的配置变更——外部编辑落盘后、Watch 下一
-	// tick（≤2 秒）之前的窗口内执行界面保存，旧实现基于内存旧快照全量写盘，
-	// 会把外部变更静默覆盖且 lastMod 随之对齐（Watch 永远检测不到，完全丢失）。
-	// 吸收后 Reload 重建快照，本次界面变更叠加在外部变更之上。
+	// 为防止外部编辑在 Watch 检测前的窗口内被界面保存静默覆盖：保存前先
+	// 吸收外部写盘造成的新配置快照，再叠加本次变更——否则基于内存旧快照
+	// 全量写盘会把外部变更丢失，且 lastMod 随之对齐后 Watch 永远检测不到。
 	// 文件被外部改坏时拒绝保存并上抛错误（前端提示用户先修复配置文件）。
 	absorbed, err := s.mgr.AbsorbExternalChange()
 	if err != nil {
@@ -287,20 +285,11 @@ func (s *State) Mutate(mutator func(*Snapshot)) error {
 	if absorbed {
 		s.Reload()
 	}
-	old := s.Snap()
-	ns := &Snapshot{
-		Providers:              cloneProviders(old.Providers),
-		APIKeys:                cloneAPIKeys(old.APIKeys),
-		Strategy:               old.Strategy,
-		CooldownEnabled:        old.CooldownEnabled,
-		CooldownSeconds:        old.CooldownSeconds,
-		CooldownRetryCount:     old.CooldownRetryCount,
-		UpstreamTimeoutSeconds: old.UpstreamTimeoutSeconds,
-		TestMessage:            old.TestMessage,
-		IPTrustLevel:           old.IPTrustLevel,
-		LogDBPath:              old.LogDBPath,
-		LogEnabled:             old.LogEnabled,
-	}
+	// 新快照必须经 cloneSnapshot 从旧快照整体克隆：为防止 Snapshot 新增字段
+	// 时手工逐字段复制遗漏（历史上曾遗漏 DefaultUserAgent，导致设置默认 UA
+	// 后任何代理 Key / 供应商变更都把该字段还原为空串并写回 yml，表现为设置项
+	// 静默丢失、重启不恢复）。
+	ns := cloneSnapshot(s.Snap())
 	mutator(ns)
 	if err := s.mgr.Update(ns.snapToConfig); err != nil {
 		return err
@@ -312,6 +301,16 @@ func (s *State) Mutate(mutator func(*Snapshot)) error {
 // MutateSettings 仅修改热加载设置项（不触碰 providers/apikeys）。
 func (s *State) MutateSettings(fn func(*Snapshot)) error {
 	return s.Mutate(func(ns *Snapshot) { fn(ns) })
+}
+
+// cloneSnapshot 克隆快照供 Mutate 生成新版本：标量字段经结构体整体赋值复制
+// （编译器保证新增字段不会被遗漏），Providers/APIKeys 走切片级深拷贝
+// （元素结构体值语义，内部切片逐项拷贝），避免污染已发布的旧快照。
+func cloneSnapshot(old *Snapshot) *Snapshot {
+	ns := *old
+	ns.Providers = cloneProviders(old.Providers)
+	ns.APIKeys = cloneAPIKeys(old.APIKeys)
+	return &ns
 }
 
 func cloneProviders(in []*config.Provider) []*config.Provider {
@@ -358,15 +357,31 @@ type ProviderCandidate struct {
 	Model    string // 该供应商内命中的真实模型名
 }
 
+// HasEnabledAPIKey 判断供应商是否至少有一条启用的 API Key：
+// 返回 true = 仍有可用 Key；false = 全部停用或未配置，等同供应商停用。
+// ResolveModel 用此把"全部 Key 停用"与"供应商停用"在候选阶段同口径排除，
+// 避免后续路由 / 代理层才知道真相造成抖动。
+// 导出供 api 包复用（仪表盘计数、AllModelNames 等读取侧均需同口径）。
+func HasEnabledAPIKey(p *config.Provider) bool {
+	for _, k := range p.APIKeys {
+		if k.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolveModel 在所有启用供应商中解析请求模型名（名称或别名，大小写不敏感）。
 // 每个供应商只返回第一个命中的模型：同一供应商内多个模型共享同一别名时不会重复入候选
 // （否则随机/加权策略下该供应商权重被放大）。
+// 供应商级 + 单条 Key 启停用都是候选阶段的过滤项：供应商停用、或其所有 API Key 均被
+// 停用时，候选阶段直接排除该供应商的所有模型（与供应商停用同口径）。
 func (s *State) ResolveModel(requested string) *ResolveResult {
 	snap := s.Snap()
 	res := &ResolveResult{}
 	seen := map[string]bool{} // providerID 去重
 	for _, p := range snap.Providers {
-		if !p.Enabled {
+		if !p.Enabled || !HasEnabledAPIKey(p) {
 			continue
 		}
 		for _, m := range p.Models {
@@ -425,6 +440,11 @@ func randIntn(n int) int {
 	return int(v.Int64())
 }
 
+// maxRRCounterKeys 轮询计数表键上限：模型名来自客户端请求（含别名与任意试探
+// 输入），计数表只增不删，必须设上限防御异常调用方无限刷键导致内存无界增长。
+// 达到上限时整体重建，轮询位置重置仅在该极端场景发生（正常模型规模永不触发）。
+const maxRRCounterKeys = 4096
+
 // PickProvider 按全局路由策略在候选中选择供应商。
 // model 用于轮询策略的 per-model 计数，避免不同模型（不同候选集）共用计数器互相干扰。
 func (s *State) PickProvider(candidates []ProviderCandidate, strategy, model string) *ProviderCandidate {
@@ -437,6 +457,9 @@ func (s *State) PickProvider(candidates []ProviderCandidate, strategy, model str
 	switch strategy {
 	case "round_robin":
 		s.rrMu.Lock()
+		if len(s.rrCounter) >= maxRRCounterKeys {
+			s.rrCounter = make(map[string]uint64)
+		}
 		s.rrCounter[model]++
 		n := s.rrCounter[model]
 		s.rrMu.Unlock()
@@ -465,14 +488,6 @@ func (s *State) PickProvider(candidates []ProviderCandidate, strategy, model str
 	default: // random
 		return &sorted[randIntn(len(sorted))]
 	}
-}
-
-// PickAPIKey 在供应商内随机选择一条 API Key。
-func PickAPIKey(p *config.Provider) *config.ProviderAPIKey {
-	if len(p.APIKeys) == 0 {
-		return nil
-	}
-	return &p.APIKeys[randIntn(len(p.APIKeys))]
 }
 
 // FindProvider 按 ID 查找供应商（快照）。
@@ -505,8 +520,9 @@ func (s *State) FindProxyKey(key string) *config.ProxyKey {
 	return nil
 }
 
-// MaskKey 脱敏：前 3 位 + *** + 后 3 位；短 Key（≤10 字符）只保留前 3 位（v1.0.0，L8 修复）。
-// 旧实现按 `key[:3] + "***" + key[4:]` 对 7 字符 Key 会泄露 6/7 字符（后 3 与前 3 重叠）；
+// MaskKey 脱敏：前 3 位 + *** + 后 3 位；短 Key（≤10 字符）只保留前 3 位。
+// 脱敏区段不可与前缀重叠：早前按 key[:3] + "***" + key[4:] 拼接，对 7 字符 Key
+// 会暴露 6/7 字符（后 3 与前 3 区间重合）；
 // 供应商上游 Key 长度由用户配置不受控，短 Key 仅保留前缀维持列表区分度、不再暴露尾部。
 func MaskKey(key string) string {
 	if len(key) <= 6 {
@@ -525,12 +541,16 @@ type ModelEntry struct {
 }
 
 // AllModelNames 返回所有启用供应商的模型名称与别名（去重合并）。
+// "启用"包含两层：供应商级 enabled=true 且其 API Key 至少一条可用（HasEnabledAPIKey），
+// 与 ResolveModel 的候选过滤同口径——全 Key 停用的供应商不参与调用，
+// 也不应在 /v1/models、/api/models 与代理 Key「可用模型」下拉中暴露，
+// 否则客户端按列表调模型会 404 model_not_found，列表与实际能力不一致。
 func (s *State) AllModelNames() []ModelEntry {
 	snap := s.Snap()
 	seen := map[string]bool{}
 	var out []ModelEntry
 	for _, p := range snap.Providers {
-		if !p.Enabled {
+		if !p.Enabled || !HasEnabledAPIKey(p) {
 			continue
 		}
 		for _, m := range p.Models {

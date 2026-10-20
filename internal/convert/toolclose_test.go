@@ -8,7 +8,7 @@
 //   - Anthropic：tool_use 块缺 content_block_stop
 //
 // 官方客户端（如 Codex Desktop）严格校验事件序列，收到不完整流会解析失败并断开
-// 连接（代理侧表现为「客户端断开」失败日志）。修复：finalize 统一补发 evToolEnd。
+// 连接（代理侧表现为「客户端断开」失败日志）。因此 finalize 统一补发 evToolEnd。
 package convert
 
 import (
@@ -46,8 +46,8 @@ func TestStreamCCToResponsesToolCallDone(t *testing.T) {
 	mustContain := []string{
 		"response.output_item.added",             // 工具条目开始
 		"response.function_call_arguments.delta", // 参数增量
-		"response.function_call_arguments.done",  // 修复点：参数完成
-		"response.output_item.done",              // 修复点：工具条目完成
+		"response.function_call_arguments.done",  // 参数完成
+		"response.output_item.done",              // 工具条目完成
 		`"name":"exec_command"`,                  // 工具名透传
 		`"arguments":"{\"cmd\":\"ls -la\"}"`,     // done/终态携带完整参数
 		"response.completed",                     // 终态事件
@@ -57,8 +57,8 @@ func TestStreamCCToResponsesToolCallDone(t *testing.T) {
 			t.Errorf("输出应包含 %s\n--- 实际输出 ---\n%s", m, got)
 		}
 	}
-	// 修复点：response.completed 的 output 数组必须含 function_call 条目
-	// （旧实现 e.items 仅在 evToolEnd 时追加，CC 上游永不触发 → output 只有 message）
+	// response.completed 的 output 数组必须含 function_call 条目
+	// （ e.items 仅在 evToolEnd 时追加，CC 上游永不触发 → output 只有 message）
 	completedIdx := strings.LastIndex(got, "event: response.completed")
 	if completedIdx < 0 {
 		t.Fatalf("缺少 response.completed 事件")
@@ -100,8 +100,8 @@ func TestStreamCCToAnthropicToolBlockStop(t *testing.T) {
 			t.Errorf("输出应包含 %s\n--- 实际输出 ---\n%s", m, got)
 		}
 	}
-	// 修复点：tool_use 块（index≥1）必须有 content_block_stop
-	// （旧实现 CC 上游无 evToolEnd → 工具块永不关闭，Anthropic SDK 解析失败）
+	// tool_use 块（index≥1）必须有 content_block_stop
+	// （ CC 上游无 evToolEnd → 工具块永不关闭，Anthropic SDK 解析失败）
 	if c := strings.Count(got, "content_block_stop"); c < 2 {
 		t.Errorf("文本块与工具块均应有 content_block_stop（工具块曾缺失），实际 %d 个\n--- 实际输出 ---\n%s", c, got)
 	}

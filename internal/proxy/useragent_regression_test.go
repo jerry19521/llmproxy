@@ -1,4 +1,4 @@
-﻿package proxy
+package proxy
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"llmproxy/internal/config"
 )
 
-// v1.0.0 回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
+// 回归测试：
 // 上游请求 User-Agent 三层优先级——供应商自定义头 > 全局默认（default_user_agent）> Go 默认。
 // 背景：腾讯元宝 bot 网关对 Go 默认 UA（Go-http-client/1.1）返回 403「错误请求」，
-// 复现记录见需求文档 v1.0.0 小节（同请求体下 curl UA 200 / Go 默认 UA 403 / 自标识 UA 200）。
+// 复现记录见需求文档（同请求体下 curl UA 200 / Go 默认 UA 403 / 自标识 UA 200）。
 
 // TestNewUpstreamRequestUserAgentPriority 真实转发路径（newUpstreamRequest）的 UA 优先级。
 func TestNewUpstreamRequestUserAgentPriority(t *testing.T) {

@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26.5+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#快速开始)
-[![Release](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/jerry19521/llmproxy/releases)
+[![Release](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/jerry19521/llmproxy)
 
 统一管理多个大模型供应商的代理服务：对外暴露 **OpenAI Chat Completions**、**OpenAI Responses API**、**Anthropic Messages API** 三种接口，对内完成身份认证、模型别名解析、智能路由、失败重试与熔断降级、跨格式自动转换，并记录完整调用日志供审计与统计。
 
@@ -36,6 +36,7 @@
 - **多供应商接入**：增删改查、启用/停用，统一管理 OpenAI、Anthropic、各类国产与三方兼容网关
 - **三种接口类型**：每个供应商可选 `OpenAI Chat Completions` / `OpenAI Responses API` / `Anthropic Messages API`，决定上游端点、认证头与请求格式；客户端调用格式与供应商格式无需一致
 - **多 API Key 管理**：每供应商可配置多条 Key，支持**逐条测试**与**批量测试**（按接口类型自动构造请求，单次最多 50 条，超出 400 拒绝；整批测试设 10 分钟总预算）
+- **单条 Key 启用/停用**：每条 API Key 可独立启用或停用，停用后该 Key 不参与代理调用、批量测试与自动获取模型的遍历；编辑页单条「测试」按钮不受启用状态过滤（保留对停用 Key 的连通性排查能力）。**单条 Key 全部停用等同该供应商停用**——路由层候选阶段直接跳过该供应商的所有模型
 - **自定义请求头**：调用上游时附加（含 `User-Agent`，可覆盖全局默认）
 - **模型别名**：如 `gpt-4o` 配置别名 `gpt4`，客户端用别名调用即可路由；大小写不敏感
 - **自动获取模型**：从上游模型列表接口拉取可用模型，弹窗勾选后批量导入
@@ -113,7 +114,7 @@ build.bat darwin arm64       # 交叉编译 macOS → dist\llmproxy-darwin-arm64
 | linux | 386, amd64, arm, arm64 |
 | darwin | amd64, arm64 |
 
-不带参数默认编译当前系统；指定平台则交叉编译到 `dist/` 并带平台后缀。可选环境变量：`VERSION=1.2.3` 注入版本号（默认使用源码中的 `buildVersion`）；`GOPROXY` 未设置时默认使用国内镜像。
+不带参数默认编译当前系统；指定平台则交叉编译到 `dist/` 并带平台后缀。可选环境变量：`VERSION=1.0.0` 注入版本号（默认使用源码中的 `buildVersion`）；`GOPROXY` 未设置时默认使用国内镜像。
 
 **方式二：手动编译**
 
@@ -287,13 +288,13 @@ jwt:
   secret: ""             # 留空则自动生成；变更后所有登录失效（★需重启生效）
   expire_hours: 24       # 登录 token 有效期；配置为 0/负值时自动回退 24
 log:
-  enabled: false          # 是否记录调用日志（默认关闭）；旧配置无该字段同样视为关闭（热加载）
+  enabled: false          # 是否记录调用日志（默认关闭，热加载）
   db_path: "data.db"     # 调用日志 SQLite 路径（热加载，切换后新日志写入新库）
 routing:
   strategy: "random"     # random | round_robin | weighted（热加载）
 cooldown:
   enabled: true            # 是否启用冷却池（热加载）
-  duration_seconds: 300    # 冷却池时长（秒，热加载）；旧配置 duration_minutes 自动迁移为秒
+  duration_seconds: 300    # 冷却池时长（秒，热加载）
   retry_count: 1           # 连续失败多少轮后才入池（热加载）；期间成功即清零计数
 upstream_timeout_seconds: 300   # 上游请求超时（热加载）
 test_message: "hi"       # 供应商 Key 测试发送内容（热加载）
@@ -309,6 +310,7 @@ providers:               # 供应商列表
     api_keys:
       - id: "k1"
         key: "sk-xxxx"
+        enabled: true    # 单条 Key 启用/停用（默认 true）
     headers:
       - key: "X-Custom"
         value: "abc"
@@ -326,6 +328,7 @@ providers:               # 供应商列表
     api_keys:
       - id: "k2"
         key: "sk-ant-xxxx"
+        enabled: true
     headers: []
     models:
       - name: "claude-sonnet-4-5"
@@ -424,6 +427,7 @@ apikeys:                 # 代理 Key 列表
   │        失败 → 401 / 403（错误格式随客户端端点）
   ├─ [1.5] 按端点格式解析请求体（失败或缺少 model → 400）
   ├─ [2] 模型解析：名称或别名（大小写不敏感）→ 候选供应商集合
+  │        ├─ 供应商停用、或其所有 API Key 均停用 → 跳过（等同供应商停用）
   │        ├─ 未命中 → 404，并记录失败日志
   │        └─ Key 可用模型校验（两档制）：原始名命中白名单 → 放行全部候选；
   │             否则仅保留自身解析后真实名在白名单内的候选，空则 403
@@ -432,7 +436,7 @@ apikeys:                 # 代理 Key 列表
   │        ├─ 构建上游请求：
   │        │    ├─ 同格式 → 别名/大小写命中仅替换 model 字段，其余字节级透传
   │        │    └─ 跨格式 → 请求体转换为供应商格式；stream 随客户端
-  │        ├─ 供应商内 Key 随机排序，最多尝试 3 次上游请求
+  │        ├─ 供应商内「启用」Key 随机排序，最多尝试 3 次上游请求
   │        │    ├─ 成功 → 跳到 [8]
   │        │    ├─ 400  → 不重试，归一化 502 返回
   │        │    ├─ 客户端断开 → 不重试，记 failure「客户端断开」

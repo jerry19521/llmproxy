@@ -76,7 +76,7 @@ func (s *Server) validateProxyKeyForm(body *apiKeyPayload, existingID, existingK
 	}
 	// 格式校验（需求 2.7.2）：sk- 前缀 + 32 位字母数字。
 	// 编辑时 Key 未变（== existingKey，含脱敏值恢复后的原值）则跳过——
-	// 存量手写配置的非标准 Key 仍可编辑其他字段，不因历史数据被拒（v1.0.0 L2 修复）。
+	// 存量手写配置的非标准 Key 仍可编辑其他字段，不因历史数据被拒（）。
 	if key != existingKey && !validProxyKeyFormat(key) {
 		return "", fmtError("API Key 需为 sk- 前缀 + 32 位字母数字（a-zA-Z0-9），或点击「随机生成」")
 	}
@@ -177,9 +177,9 @@ func (s *Server) handleAPIKeyCreate(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: body.ExpiresAtSafe(), IPWhitelist: wl, Enabled: enabled,
 		Models: models, CreatedAt: now, UpdatedAt: now,
 	}
-	var dupErr error // v1.0.0（L3）：临界区内复查唯一性，消除锁外预检的 TOCTOU 窗口
+	var dupErr error // 临界区内复查唯一性，消除锁外预检的 TOCTOU 窗口
 	if err := s.State.Mutate(func(ns *core.Snapshot) {
-		// v1.0.0（L3）：唯一性校验在 Mutate 临界区内复查——锁外预检与提交之间存在窗口，
+		// 唯一性校验在 Mutate 临界区内复查——锁外预检与提交之间存在窗口，
 		// 两个并发 create 同 Key 可双双通过预检产生重复配置（FindProxyKey 只命中第一条，第二条成死配置）。
 		for _, k := range ns.APIKeys {
 			if k.Key == key {
@@ -215,7 +215,7 @@ func (s *Server) handleAPIKeyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 编辑时 key 可能为脱敏回显值 → 保留原值。
-	// v1.0.0（A9）：精确比对取代 Contains("***")——真实代理 Key 若字面含 ***（理论上
+	// 精确比对取代 Contains("***")——真实代理 Key 若字面含 ***（理论上
 	// sk-+32 位随机不会，但防御性口径与供应商侧统一），内容特征误判会静默把用户输入
 	// 替换回旧值；只有提交值恰为现有 Key 的脱敏值时才视为未修改。
 	existing := s.State.FindProxyKeyByID(id)
@@ -232,8 +232,8 @@ func (s *Server) handleAPIKeyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := false
-	var dupErr error                // v1.0.0（L3）：临界区内复查同 Create
-	var updatedKey *config.ProxyKey // v1.0.0（A4）：锁内捕获更新后的 Key 指针——旧实现响应阶段
+	var dupErr error                // 临界区内复查同 Create
+	var updatedKey *config.ProxyKey // 锁内捕获更新后的 Key 指针——响应阶段
 	// 再次 FindProxyKeyByID，并发 DELETE 同一 Key 恰好落在窗口内时返回 nil、toKeyView
 	// 解引用空指针 panic（net/http recover 后客户端收到连接中断而非统一 JSON 错误）。
 	if err := s.State.Mutate(func(ns *core.Snapshot) {

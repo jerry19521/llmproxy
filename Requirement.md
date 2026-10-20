@@ -9,7 +9,7 @@
 | 前端技术栈 | 原生 HTML + JavaScript（无前端框架） |
 | 持久化 | 配置统一存放于 `config.yml`；运行数据（调用日志）存放于 SQLite 数据库 |
 | 构建脚本 | `build.bat`（Windows）/ `build.sh`（Linux/macOS），支持当前平台编译与交叉编译 |
-| 文档状态 | v1.0.0（2026-10-10）：首次公开发布，对应程序版本 1.0.0。完整功能规格见正文（第 1 章总览，各功能章节展开）。发布前经过多轮全面代码审查（行为正确性、并发竞态、安全面、边界条件）与全量回归测试（7 包、百余用例），关键修复均配套回归用例固化。 |
+| 文档状态 | v1.0.0（项目当前版本）。完整功能规格见正文（第 1 章总览，各功能章节展开）。 |
 
 ---
 
@@ -117,7 +117,7 @@
 
 **③ API Key（多行可增删）**
 
-每条含一个 Key 输入框 + 测试按钮 + 删除按钮；支持添加多条（见 2.3.2）。
+每条含一个 Key 输入框 + 「启用」开关 + 测试按钮 + 删除按钮；支持添加多条（见 2.3.2）。**每条 Key 可独立启用或停用，停用后该 Key 不参与代理调用、批量测试与自动获取模型的遍历，但仍可在编辑页对其单独发起测试**（用于排查停用前的连通性问题，单条测试不受启用状态过滤）。
 
 **④ 请求头（键值对多行）**
 
@@ -129,9 +129,15 @@
 
 #### 2.3.2 API Key（多值）
 
-- 每条记录 = Key 输入框 + 「测试」按钮 + 「删除」按钮。
-- 顶部「添加 API Key」按钮新增一条空记录。
+- 每条记录 = Key 输入框 + 「启用」开关 + 「测试」按钮 + 「删除」按钮。
+- 顶部「添加 API Key」按钮新增一条空记录（默认启用）。
 - 每条 Key 可单独测试（见 2.5），测试结果（成功/失败）显示在该条记录旁。
+- **启用/停用语义**：
+  - 启用状态仅控制该 Key 是否参与**代理调用**（路由层 + 失败重试）+ 批量测试遍历 + 自动获取模型遍历，不影响单条测试；
+  - 单条测试（点 Key 行内「测试」按钮，发起时 `single=true`）**不按启用状态过滤**，允许对已停用 Key 发起测试用于排查；
+  - 批量测试（点「▶ 测试」按钮，发起时 `single=false`）**仅对启用 Key 发起**——前端不再用 `key_ids` 长度推断单/批量，改用显式 `single` 字段（避免「供应商仅有 1 条 Key」边界被误判为单条）；
+  - 自动获取模型（2.3.5）**仅尝试启用 Key**，跳过停用 Key；
+  - 某供应商的所有 API Key 均被停用时，等同于该供应商被停用——路由层候选阶段直接跳过该供应商的所有模型候选，不再对其发起尝试、也不写入 attempts 日志（**其他供应商照常参与**，与 `provider.enabled=false` 同口径）。`/v1/models`、`/api/models` 与代理 Key「可用模型」下拉的数据源 `AllModelNames` 也用同一口径过滤，避免客户端按列表调模型却得到 `model_not_found`。
 
 #### 2.3.3 请求头（多值，键值对）
 
@@ -154,7 +160,7 @@
 在模型列表区域上方，「添加模型」按钮旁边提供「自动获取」按钮。
 
 - **触发条件**：基础地址已填写 + 至少有一条 API Key。
-- **调用方式**：新增页与编辑页统一走 POST 表单模式，使用**表单当前填写的数据**（base_url、接口类型、所有 Key、表单当前填写的自定义请求头），无需先保存供应商；编辑页表单中的脱敏 Key（含 `***`）由后端按 provider_id + Key id 从已保存配置恢复完整值参与获取（与 2.5.1 测试数据来源同模式），无法恢复的 Key 跳过。后端按顺序依次尝试各 Key 调用上游 `GET` 模型列表接口（按接口类型：Chat Completions / Responses 发往 `{base_url}/models`，Anthropic 发往 `{base_url}/v1/models`，认证头按 2.3.6 规则），以第一个返回 200 的 Key 的响应为准。
+- **调用方式**：新增页与编辑页统一走 POST 表单模式，使用**表单当前填写的数据**（base_url、接口类型、所有 Key、表单当前填写的自定义请求头），无需先保存供应商；编辑页表单中的脱敏 Key（含 `***`）由后端按 provider_id + Key id 从已保存配置恢复完整值参与获取（与 2.5.1 测试数据来源同模式），无法恢复的 Key 跳过。**Key 遍历时跳过停用 Key**（与 2.3.2 启用/停用语义一致）。后端按顺序依次尝试各启用的 Key 调用上游 `GET` 模型列表接口（按接口类型：Chat Completions / Responses 发往 `{base_url}/models`，Anthropic 发往 `{base_url}/v1/models`，认证头按 2.3.6 规则），以第一个返回 200 的 Key 的响应为准。
 - **响应兼容**：兼容不同厂商 `/models` 响应格式，取 `data[].id` 或 `data[].name` 等常见字段。
 - **失败处理**：所有 Key 均失败 → 弹出提示「获取模型失败：{原因}」，不影响现有表单数据。
 - **选择弹窗**：
@@ -174,7 +180,7 @@
 | `responses`（Responses API） | `POST {base_url}/responses` | `Authorization: Bearer {key}` | OpenAI Responses API |
 | `anthropic`（Anthropic API） | `POST {base_url}/v1/messages`（base_url 以 `/v1` 结尾时拼 `/messages`） | `x-api-key: {key}` + `anthropic-version: 2023-06-01` + `Authorization: Bearer {key}` | Anthropic Messages API |
 
-- **默认值与兼容**：旧配置（无 `api_type` 字段）自动视为 `openai`；取值不合法时后端保存报 400。
+- **默认值与兼容**：无 `api_type` 字段时自动视为 `openai`；取值不合法时后端保存报 400。
 - **格式与端点解耦**：用户调用本代理时使用哪种格式（三个代理端点之一）与供应商类型无关，代理自动在两者之间转换（见 6.7）。
 
 ### 2.4 测试模型下拉框
@@ -187,9 +193,9 @@
 
 #### 2.5.1 测试触发方式
 
-**批量测试**：测试模型下拉框右侧提供「测试」按钮，用选中的测试模型对供应商的**所有** API Key 依次发起测试请求，每条显示各自结果。
+**批量测试**：测试模型下拉框右侧提供「测试」按钮，用选中的测试模型对供应商的**所有启用** API Key 依次发起测试请求，每条显示各自结果；**停用 Key 自动跳过**，不在结果列表中出现（用于减少不必要的上游配额消耗）。
 
-**单条测试**：每条 API Key 记录右侧有独立的「测试」按钮，仅对该条 Key 发起测试请求。
+**单条测试**：每条 API Key 记录右侧有独立的「测试」按钮，仅对该条 Key 发起测试请求；**不受启用状态过滤**，已停用 Key 仍可测试用于排查连通性。
 
 **测试数据来源**：批量/单条测试均直接使用**表单当前填写的内容**（基础地址、API Key、请求头），无需先保存供应商。已保存供应商的脱敏 Key（`sk-***xxx`）按其 id 从已保存配置自动恢复完整值参与测试；保存供应商后 Key id 会变化，旧测试结果自动清空。
 
@@ -229,9 +235,9 @@
 | DELETE | `/api/providers/:id` | 删除供应商（真删除） |
 | POST | `/api/providers/:id/enable` | 启用供应商 |
 | POST | `/api/providers/:id/disable` | 停用供应商 |
-| POST | `/api/providers/test` | 测试 API Key（**表单模式，无需先保存供应商**）；body `{"provider_id":"<可选，用于恢复脱敏Key>","base_url":"<基础地址>","api_type":"<openai/responses/anthropic，可选>","api_keys":[{"id":"...","key":"..."}],"headers":[...],"model":"<测试模型名>","key_ids":["<key_id>"]}`（key_ids 省略表示测试全部 Key；含 `***` 的脱敏 Key 按 provider_id+id 恢复，无法恢复的跳过）；按接口类型构造测试请求（见 2.5.2）；实时返回结果与请求/响应详情，不存储；**需管理员 JWT 认证**（同其他 `/api/*` 管理接口），即使代理转发端点无需登录，该测试接口也需要登录身份以区分管理操作权限 |
-| GET | `/api/providers/fetch-models` | 自动获取模型（已保存供应商便捷接口；**前端页面统一改走 POST 表单模式，此接口保留兼容**）；参数通过 URL query 传递：`?provider_id=<id>`；后端使用指定 provider 的 base_url、接口类型、第一条 API Key 以及该 provider 的自定义请求头发往对应模型列表端点（见 2.3.5）；成功时返回 JSON `{"models":["gpt-4o","gpt-4o-mini",...]}`；失败时返回 4xx/5xx 并附带错误原因 |
-| POST | `/api/providers/fetch-models` | 表单模式自动获取模型（**新增页 / 编辑页统一**）；body 含 `provider_id`（可选，编辑页传入，用于恢复表单中的脱敏 Key）、`base_url`、`api_type`（可选）、`api_keys`（`[{"id":"...","key":"..."}]`，含 `***` 的脱敏 Key 按 provider_id + id 恢复完整值，无法恢复的跳过）、`headers`；按顺序依次尝试各 Key，以第一个成功的 Key 响应为准；单次尝试 Key 上限 50，超出返回 400；整批尝试受 **10 分钟总预算**约束——预算耗尽停止尝试剩余 Key、错误消息注明总超时；客户端断开同样终止在途请求（请求全链路贯穿 ctx） |
+| POST | `/api/providers/test` | 测试 API Key（**表单模式，无需先保存供应商**）；body `{"provider_id":"<可选，用于恢复脱敏Key>","base_url":"<基础地址>","api_type":"<openai/responses/anthropic，可选>","api_keys":[{"id":"...","key":"...","enabled":true}],"headers":[...],"model":"<测试模型名>","key_ids":["<key_id>"],"single":<bool>}`（含 `***` 的脱敏 Key 按 provider_id+id 恢复，无法恢复的跳过；`key_ids` 仅用于行内按钮触发的单条测试时传 `[<key_id>]`，批量按钮（`single=false`）可省略；`single=true`=行内单条测试，**不过滤停用 Key**（保留对停用 Key 排查连通性能力），`single=false`=批量测试，**跳过停用 Key**）；按接口类型构造测试请求（见 2.5.2）；实时返回结果与请求/响应详情，不存储；**需管理员 JWT 认证**（同其他 `/api/*` 管理接口），即使代理转发端点无需登录，该测试接口也需要登录身份以区分管理操作权限 |
+| GET | `/api/providers/fetch-models` | 自动获取模型（已保存供应商便捷接口；**前端页面统一改走 POST 表单模式，此接口保留兼容**）；参数通过 URL query 传递：`?provider_id=<id>`；后端使用指定 provider 的 base_url、接口类型、**首条启用的** API Key 以及该 provider 的自定义请求头发往对应模型列表端点（见 2.3.5；与 2.3.2 启停用语义一致，**跳过停用 Key，全部停用时返回 400**）；成功时返回 JSON `{"models":["gpt-4o","gpt-4o-mini",...]}`；失败时返回 4xx/5xx 并附带错误原因 |
+| POST | `/api/providers/fetch-models` | 表单模式自动获取模型（**新增页 / 编辑页统一**）；body 含 `provider_id`（可选，编辑页传入，用于恢复表单中的脱敏 Key）、`base_url`、`api_type`（可选）、`api_keys`（`[{"id":"...","key":"...","enabled":true}]`，含 `***` 的脱敏 Key 按 provider_id + id 恢复完整值，无法恢复的跳过；**跳过停用 Key**）；按顺序依次尝试各启用的 Key，以第一个成功的 Key 响应为准；单次尝试 Key 上限 50，超出返回 400；整批尝试受 **10 分钟总预算**约束——预算耗尽停止尝试剩余 Key、错误消息注明总超时；客户端断开同样终止在途请求（请求全链路贯穿 ctx） |
 
 ### 2.7 数据模型
 
@@ -246,7 +252,7 @@
   "enabled": true,
   "weight": 1,
   "api_keys": [
-    { "id": "k1", "key": "sk-xxxx" }
+    { "id": "k1", "key": "sk-xxxx", "enabled": true }
   ],
   "headers": [
     { "key": "X-Custom-Header", "value": "abc" }
@@ -261,11 +267,12 @@
 
 字段说明：
 
-- `api_type`：供应商接口类型，`openai`（Chat Completions，默认，旧配置缺省值）| `responses`（OpenAI Responses API）| `anthropic`（Anthropic Messages API）。决定上游端点、认证头与请求格式（见 2.3.6）；管理接口返回时始终为规范化后的三值之一。
+- `api_type`：供应商接口类型，`openai`（Chat Completions，默认）| `responses`（OpenAI Responses API）| `anthropic`（Anthropic Messages API）。决定上游端点、认证头与请求格式（见 2.3.6）；管理接口返回时始终为规范化后的三值之一。
 
 - `models[].aliases`：模型别名数组。调用时将传入的模型名与别名匹配（大小写不敏感），命中后替换为真实 `name`。
 - `models[].name`：同一供应商内全局唯一；若出现重复名称，后端保存时返回 400（`{"error":{"message":"同供应商内模型名称不能重复: <重复的模型名>","code":"duplicate_model_name"}}`，错误消息与代码实际返回对齐）。
 - `api_keys[].id`：UUID 格式字符串，系统自动生成，用于批量测试等接口中引用特定 Key。
+- `api_keys[].enabled`：单条 Key 是否启用，`true`（默认）= 启用、`false` = 停用。停用后该 Key 不参与代理调用、批量测试与自动获取模型的遍历，但单条测试仍可发起（见 2.3.2）。**单条 Key 启用状态与供应商级 `enabled` 是正交维度**：供应商停用时其所有 Key 都不参与调用；某供应商所有 Key 均停用时等同该供应商停用（路由层候选阶段直接跳过该供应商的所有模型）。
 - `weight`：路由权重，默认 1。用于加权随机策略（见功能二 3.3）时按权重比例分配请求。注意：`weight` 是供应商级别的权重，与供应商内各 Key 的权重无关（供应商内 Key 选择统一使用随机策略，见 6.4 请求流程第 5 步）。
 - `created_at`：供应商创建时间，ISO 8601 格式，创建后不变。
 - `updated_at`：供应商最后修改时间，ISO 8601 格式，每次保存供应商时更新。
@@ -311,7 +318,7 @@
 | IP 层级 | 数字 | `0` | 反向代理层数（0 = 直连，无代理，直接以连接 IP 作为来源 IP；1 = 一层代理，取 `X-Forwarded-For` 首个 IP；2 = 两层，取倒数第二个 IP；以此类推），用于正确获取请求来源 IP；热加载 |
 | 测试发送内容 | 多行文本 | `hi` | 功能一中测试供应商 API Key 时发送的消息内容；热加载 |
 | 默认 User-Agent | 文本 | 空 | 发往上游请求的默认 User-Agent；空 = 不设置（使用 Go 标准库默认 `Go-http-client/1.1`，与旧行为一致）；部分上游网关（如腾讯元宝 bot）会拦截 Go 默认 UA 返回 403，此时配置为 curl / 浏览器等常见 UA；优先级：供应商自定义请求头中的 User-Agent > 此全局默认 > Go 默认；三处出站请求（真实转发 / 测试 Key / 自动获取模型）统一生效；热加载 |
-| **记录调用日志** | 开关 | **关闭** | 是否记录新的调用日志；**默认关闭**，旧配置文件无 `log.enabled` 字段时同样视为关闭；关闭后新调用不再写入日志库（已有日志仍可查询/删除），仪表盘与统计不再产生新数据；热加载 |
+| **记录调用日志** | 开关 | **关闭** | 是否记录新的调用日志；**默认关闭**（无 `log.enabled` 字段时同样视为关闭）；关闭后新调用不再写入日志库（已有日志仍可查询/删除），仪表盘与统计不再产生新数据；热加载 |
 | 日志数据库路径 | 文本 | `data.db` | 调用日志 SQLite 文件路径（相对当前工作目录）；可在设置页修改；热加载——修改后立即切换到新库，后续日志写入新库，旧库文件保留；**切换成功但配置持久化失败时自动回滚到原库并记录日志（避免界面提示与实际生效不一致）** |
 | 上游请求超时 | 数字 | `300` | 单次上游请求超时秒数；功能五 6.5；热加载 |
 
@@ -368,7 +375,7 @@
 ### 3.4 冷却池（失败熔断）
 
 - **启用开关**：可在设置页启用/停用冷却池；停用后失败不再进入冷却池，已有条目也不再参与路由过滤。默认启用。
-- **冷却时长**：全局统一设置，单位**秒**，默认 300 秒，可在设置页修改（旧配置中的 `duration_minutes` 字段自动迁移为秒，保存后不再输出旧字段）。
+- **冷却时长**：全局统一设置，单位**秒**，默认 300 秒，可在设置页修改。
 - **失败重试次数**：同一 `(供应商, 模型)` **连续**「所有 API Key 均失败」的轮数达到该阈值后才加入冷却池；期间任一次调用成功即清零计数。默认 1（一轮失败即冷却）。设为 N 时，单轮内失败只累计、不冷却，给供应商恢复窗口。
 - **触发**：该供应商该模型**所有 API Key 均失败**且连续失败轮数达到「失败重试次数」（同供应商内 Key 重试失败不触发，见 6.4）。
 - **效果**：冷却期内，路由不再将请求分配给该供应商的该模型；手动移除/清空条目时同步清零失败计数。
@@ -427,8 +434,8 @@ ip_trust_level: 0
 routing:
   strategy: "random"              # random | round_robin | weighted
 cooldown:
-  enabled: true              # 是否启用冷却池；旧配置无此字段时默认启用
-  duration_seconds: 300      # 冷却池时长（秒）；旧字段 duration_minutes 自动迁移为秒，保存后不再输出
+  enabled: true              # 是否启用冷却池；无此字段时默认启用
+  duration_seconds: 300      # 冷却池时长（秒）
   retry_count: 1             # 连续失败多少轮后才入池；期间成功即清零计数
 upstream_timeout_seconds: 300
 test_message: "hi"                # 功能一测试供应商 API Key 时发送的消息内容（默认 hi）
@@ -440,7 +447,7 @@ jwt:
   secret: ""                      # 空则启动时自动生成
   expire_hours: 24                # JWT 有效期（小时）；0/负值自动按 24 兑底；类型非法（如字符串）在配置解析阶段报错、不进入兑底
 log:
-  enabled: false                 # 是否记录调用日志；默认关闭；旧配置无此字段时同样视为关闭
+  enabled: false                 # 是否记录调用日志；默认关闭；无此字段时同样视为关闭
   db_path: "data.db"
 providers:
   - id: "p1"
@@ -448,7 +455,7 @@ providers:
     base_url: "https://api.openai.com/v1"
     enabled: true
     weight: 1
-    api_keys: [ { "id": "k1", "key": "sk-xxxx" } ]
+    api_keys: [ { "id": "k1", "key": "sk-xxxx", "enabled": true } ]
     headers: [ { "key": "X-Custom", "value": "abc" } ]
     models: [ { "name": "gpt-4o", "aliases": ["gpt4"] } ]
 apikeys:
@@ -510,9 +517,9 @@ apikeys:
 }
 ```
 
-`tokens_per_second` 为本次调用的**输出 token 速率**（completion_tokens ÷ generation_ms 秒；生成耗时或输出 token 为 0 时记 0），写入时随日志一并落库，旧库自动迁移补列。
+`tokens_per_second` 为本次调用的**输出 token 速率**（completion_tokens ÷ generation_ms 秒；生成耗时或输出 token 为 0 时记 0），写入时随日志一并落库。
 
-`generation_ms` 为生成耗时，速率计算口径：**流式调用从模型供应商返回给代理的首个响应字节开始计算**（`last_chunk_ms - first_byte_ms`，即模型实际吐字窗口，不含排队与首字节延迟）；**非流式调用按整个请求的耗时**（`duration_ms`）计算；流式异常（未收到首字节）回退总耗时；模型未匹配等无上游响应场景为 0。`first_byte_ms`（上游首字节耗时）已入库，详情页可查看。旧库自动迁移补列，默认 0。
+`generation_ms` 为生成耗时，速率计算口径：**流式调用从模型供应商返回给代理的首个响应字节开始计算**（`last_chunk_ms - first_byte_ms`，即模型实际吐字窗口，不含排队与首字节延迟）；**非流式调用按整个请求的耗时**（`duration_ms`）计算；流式异常（未收到首字节）回退总耗时；模型未匹配等无上游响应场景为 0。`first_byte_ms`（上游首字节耗时）已入库，详情页可查看，默认 0。
 
 > 列表接口的 `apikey` 为脱敏显示（节省空间并降低泄露面），详情接口 `/api/logs/:id` 仍返回完整 Key。
 
@@ -610,15 +617,12 @@ apikeys:
 | body 非 JSON | 标注「非 JSON 内容」原样文本展示 |
 | SSE 单帧解析失败 | 重组视图警示计数，不影响其余帧重组 |
 | 某组数据为空 | 显示「(无数据)」及场景说明（如重试期间未送达客户端、模型未匹配无上游数据） |
-| 旧版日志数据（`client_resp_body` 等新字段缺失） | 沿用兼容回退（`upstream_url`←`req_url`、`client_resp_body`←`resp_body`） |
 | 伪流式组合（resp_body 为 JSON、client_resp_body 为合成 SSE） | 各自按内容独立识别解析 |
 | UTF-8 截断乱码 | 容忍展示 |
 
 **超长内容交互**：各请求/响应体超长时默认折叠预览（前 6 万字符），提供「显示全部」与「复制全文」按钮；后端入库上限 1MB（超出部分以 `...(truncated)` 标记）。
 
 **性能要求**：标签页懒渲染（打开详情仅渲染默认标签）；长文本沿用「预览截断 + 显示全部」机制；1MB 级数据打开详情折叠态渲染无明显卡顿，浏览器 console 无报错。
-
-旧版本兼容：早期日志中 `req_url` 记录上游 URL、流式 `resp_body` 为发给客户端的字节，详情页对旧数据做兼容回退展示。
 
 ### 4.4 存储与保留
 
@@ -629,7 +633,6 @@ apikeys:
   - **已有日志不受影响**：仍可正常列表查询、查看详情、删除单条与清空全部；
   - 开关仅控制**写入**，日志数据库始终打开（供历史日志查询），关闭状态不释放库文件；
   - 热加载生效：修改 `config.yml` 或设置页保存后立即生效，无需重启；
-  - 兼容：旧配置文件无 `log.enabled` 字段时同样视为关闭（含从旧版本升级的场景，升级后若需记录需手动打开）。
 - **文件路径**：在设置页配置（`log.db_path`），默认当前工作目录下 `data.db`。
 - **保留策略**：日志默认永久保留，不自动覆盖，不自动清理；管理员可在日志页手动删除单条或清空全部（见 4.2 删除）。
 - **清空即重建**：清空全部日志时**直接删除日志数据库文件并重新生成**（关闭当前库 → 删除库文件与 `-wal` / `-shm` 伴生文件 → 原路径重建空库）。原因：SQLite 的 `DELETE` 只把页标记为空闲复用，**不会把空间归还文件系统**，长期运行后库文件只增不减；删除文件重建可即时腾出全部空间。重建完成后新到达的调用日志写入重建后的新库；重建窗口内（旧库已关闭、新库未就绪，毫秒级）到达的日志会被丢弃，不阻塞重建。文件被外部工具占用导致删除失败时，自动降级为 SQL 清空（保证数据清空，空间待文件解锁后下次清空释放）。**重建失败自愈**：重建失败（目标路径不可写、磁盘满等）时自动回开原库文件，日志子系统持续可用，并在服务日志中醒目提示。**重建/切换与查询互斥**：清空重建与日志路径切换（设置页保存、配置热加载）均持写锁、查询/单删/仪表盘/统计在读锁内获取库引用——重建或切换期间到达的查询阻塞等待、完成后用新库正常返回；读接口另设「database is closed 时重取引用重试一次」的防御性兜底。
@@ -659,7 +662,7 @@ CREATE TABLE call_logs (
   completion_tokens INTEGER,
   total_tokens INTEGER,
   tokens_per_second REAL DEFAULT 0,
-  req_url TEXT,                 -- 兼容旧版：旧版记录上游 URL，新数据为空
+  req_url TEXT,                 -- 备用字段：新数据统一写入 upstream_url
   req_method TEXT,
   req_headers TEXT,             -- 客户端 → 代理：请求头
   req_body TEXT,                -- 客户端 → 代理：请求体（客户端原始格式）
@@ -691,12 +694,12 @@ CREATE INDEX idx_logs_actual_model ON call_logs(actual_model);
 
 - `status`：取值为 `success` 或 `failure`。
 - `apikey`：代理 API Key 明文存储，**建议**通过后端加密（如 AES-GCM 或 ChaCha20-Poly1305）后存储，数据库只保存密文，或使用透明加密层（如 SQLite SEE）；若泄漏风险高，可对调用日志表的该字段单独加密存储（建议F）。
-- 请求/响应按传输方向分四组：客户端 → 代理（`client_req_url` / `req_method` / `req_headers` / `req_body`，原始格式）；代理 → 上游（`upstream_url` / `upstream_req_headers` / `upstream_req_body`，跨格式为转换后内容，可与客户端原始请求对照定位转换问题）；上游 → 代理（`resp_status` / `resp_headers` / `resp_body`，上游响应副本）；代理 → 客户端（`client_resp_status` / `client_resp_headers` / `client_resp_body`，跨格式为转换后内容，流式为已发送部分）。`req_headers` 包含调用方传入的完整 HTTP 请求头（含 Authorization）；`upstream_req_headers` 中认证字段（Authorization / X-Api-Key）脱敏后存储（保留前 10 + 尾 4 字符）。旧库启动时自动 `ALTER TABLE` 补列。
+- 请求/响应按传输方向分四组：客户端 → 代理（`client_req_url` / `req_method` / `req_headers` / `req_body`，原始格式）；代理 → 上游（`upstream_url` / `upstream_req_headers` / `upstream_req_body`，跨格式为转换后内容，可与客户端原始请求对照定位转换问题）；上游 → 代理（`resp_status` / `resp_headers` / `resp_body`，上游响应副本）；代理 → 客户端（`client_resp_status` / `client_resp_headers` / `client_resp_body`，跨格式为转换后内容，流式为已发送部分）。`req_headers` 包含调用方传入的完整 HTTP 请求头（含 Authorization）；`upstream_req_headers` 中认证字段（Authorization / X-Api-Key）脱敏后存储（保留前 10 + 尾 4 字符）。
 - `attempt_logs`：JSON 数组，每条尝试含 `provider`、`api_key_id`、`error_msg`；字符串形式存储在数据库中。
 - `prompt_tokens` / `completion_tokens` / `total_tokens`：以供应商返回的 `usage` 字段为准；供应商不返回 usage 时均计为 0。上游返回错误 HTTP 状态（4xx/5xx）时，无论响应体中是否包含 `usage` 字段，三个 token 字段均计为 0，不计入统计。
-- `tokens_per_second`：输出 token 速率 = completion_tokens ÷ (generation_ms ÷ 1000)；生成耗时或输出 token 为 0 时记 0；仅在成功日志中计算（失败日志 token 恒为 0，速率也为 0）。旧库启动时自动 `ALTER TABLE` 补列。
-- `generation_ms`：生成耗时，速率计算口径：流式 = 末字节耗时 - 上游首字节耗时（`last_chunk_ms - first_byte_ms`，从模型供应商返回给代理的首个响应字节起算，即模型实际吐字窗口）；非流式 = 总耗时（整个请求的时间）；流式异常（未收到首字节）回退总耗时；模型未匹配等无上游响应场景为 0。旧库自动补列，默认 0。
-- `first_content_ms`：首个文本增量到达耗时（请求发出 → 首个文本输出类 SSE 事件到达），用于拆分 reasoning 阶段与 content 阶段的等待（reasoning 流模型如 qwen3 / o1 整个响应都在生成时仍可区分首 content 前的真实等待）。同格式透传与跨格式转换两条路径同口径识别——跨格式在转换器解析事件时识别、同格式在透传扫描器识别。透传扫描器按标记子串识别：OpenAI `delta.content` / Anthropic `text_delta` 事件与 `content_block_start(text)` / Responses `content_part.added`（`part.type=output_text`，真实流中先于 `output_text.delta` 到达）；`text_delta` + `type:text` 事件名/块类型判定可正确识别 Responses 的 `reasoning_summary_text.done`（含 "text" 字段但类型为 summary）；累积副本达 64MB 封顶后检测同时覆盖当前块（防止仅扫已封顶副本导致此后漏检）。未收到文本增量（纯工具调用 / 纯 reasoning / 上游不含该字段）或非流式调用记 0。旧库自动补列，默认 0。
+- `tokens_per_second`：输出 token 速率 = completion_tokens ÷ (generation_ms ÷ 1000)；生成耗时或输出 token 为 0 时记 0；仅在成功日志中计算（失败日志 token 恒为 0，速率也为 0）。
+- `generation_ms`：生成耗时，速率计算口径：流式 = 末字节耗时 - 上游首字节耗时（`last_chunk_ms - first_byte_ms`，从模型供应商返回给代理的首个响应字节起算，即模型实际吐字窗口）；非流式 = 总耗时（整个请求的时间）；流式异常（未收到首字节）回退总耗时；模型未匹配等无上游响应场景为 0；默认 0。
+- `first_content_ms`：首个文本增量到达耗时（请求发出 → 首个文本输出类 SSE 事件到达），用于拆分 reasoning 阶段与 content 阶段的等待（reasoning 流模型如 qwen3 / o1 整个响应都在生成时仍可区分首 content 前的真实等待）。同格式透传与跨格式转换两条路径同口径识别——跨格式在转换器解析事件时识别、同格式在透传扫描器识别。透传扫描器按标记子串识别：OpenAI `delta.content` / Anthropic `text_delta` 事件与 `content_block_start(text)` / Responses `content_part.added`（`part.type=output_text`，真实流中先于 `output_text.delta` 到达）；`text_delta` + `type:text` 事件名/块类型判定可正确识别 Responses 的 `reasoning_summary_text.done`（含 "text" 字段但类型为 summary）；累积副本达 64MB 封顶后检测同时覆盖当前块（防止仅扫已封顶副本导致此后漏检）。未收到文本增量（纯工具调用 / 纯 reasoning / 上游不含该字段）或非流式调用记 0；默认 0。
 
 ---
 
@@ -884,10 +887,11 @@ jwt:
 3. **模型解析**：从请求体 `model` 字段取出模型名，在所有启用供应商的 `(模型名称, 别名列表)` 中匹配：
    - 命中别名（大小写不敏感）→ 得到候选供应商集合，**每个候选携带其自身命中的真实模型名**（同一别名在不同供应商可指向不同真实模型，发往上游的模型名取该供应商自己配置的名字；同一供应商内多个模型共享同一别名时只入候选一次）。
    - 命中真实名称（大小写不敏感，如 `GPT-4O` 匹配 `gpt-4o`）→ 直接得到候选供应商集合。
+   - **供应商过滤**：模型解析阶段排除 `provider.enabled = false` 的供应商、**以及所有 API Key 均被停用的供应商**（与供应商停用同口径，整供应商不可用），避免候选阶段纳入后又在调用层被跳过造成路由抖动。
    - 未匹配 → 返回 404（模型从未被任何供应商配置过），并异步记录失败日志（status = `failure`，错误原因「未匹配到对应模型」，`client_resp_status` = 404、`resp_status` = 0（无上游响应），未尝试任何供应商、`provider` 为空）。
 4. **冷却池过滤**：从候选供应商集合中排除处于冷却中的 `(供应商, 模型)` 组合；冷却池停用时跳过过滤（候选原样保留）。
 5. **路由选择**：按全局路由策略（功能二 3.3）在剩余候选供应商中选出一个（随机 / 轮询 / 加权随机）。候选供应商可含不同接口类型，类型不影响路由。
-6. **上游 Key 选择**：该供应商的多条 API Key 在选中的供应商内部按**随机策略**选取（无论全局路由策略为随机/轮询/加权，供应商内 Key 选择均使用随机）。
+6. **上游 Key 选择**：该供应商的**启用** API Key 在选中的供应商内部按**随机策略**选取（无论全局路由策略为随机/轮询/加权，供应商内 Key 选择均使用随机）；停用 Key 不参与选取，最多随机尝试 3 个启用 Key。
  7. **发往上游**：按供应商接口类型拼接端点、设置认证头（见 2.3.6）与全局默认 User-Agent（`default_user_agent`；空则不设置，供应商自定义头中的 UA 优先），并按「同格式透传 / 跨格式转换」两种模式构造请求体（见 6.7）：
    - **同格式**（供应商类型 = 客户端格式）：
      - 调用方传入的模型名与真实模型名**完全一致**（含大小写）→ 请求体**字节级原样转发**。
@@ -1114,7 +1118,7 @@ jwt:
 
 # ===== 日志 =====
 log:
-  enabled: false               # 是否记录调用日志；默认关闭；旧配置无此字段时同样视为关闭
+  enabled: false               # 是否记录调用日志；默认关闭；无此字段时同样视为关闭
   db_path: "data.db"              # SQLite 调用日志文件路径
 
 # ===== 路由与熔断 =====
@@ -1122,8 +1126,8 @@ routing:
   strategy: "random"              # random | round_robin | weighted（全局）
 
 cooldown:
-  enabled: true              # 是否启用冷却池（旧配置无此字段时默认启用）
-  duration_seconds: 300      # 冷却池时长（秒）；旧字段 duration_minutes 自动迁移，保存后不再输出
+  enabled: true              # 是否启用冷却池（无此字段时默认启用）
+  duration_seconds: 300      # 冷却池时长（秒）
   retry_count: 1             # 连续失败多少轮后才入池；期间任一次成功即清零计数
 
 upstream_timeout_seconds: 300   # 上游请求超时（秒），默认 300
@@ -1225,23 +1229,4 @@ apikeys:
 | `/v1/messages` | 代理转发端点（Anthropic Messages API 格式） | 需代理 API Key |
 | `/v1/models` | 可用模型列表端点 | 需代理 API Key |
 
-> AI生成
-
----
-
-## 12 版本更新记录
-
-### v1.0.0（2026-10-10）：首次公开发布
-
-首个公开发布版本（GitHub），对应程序版本 1.0.0。功能全貌：
-
-- **多供应商统一接入**：可选 OpenAI Chat Completions / OpenAI Responses API / Anthropic Messages API 三种接口类型；多 API Key 管理、批量测试、自动获取模型、自定义请求头、全局默认 User-Agent（发往上游请求的 User-Agent，可覆盖）
-- **三种端点代理转发**：`/v1/chat/completions`、`/v1/responses`、`/v1/messages`、`/v1/models`；客户端格式与供应商格式任意组合（3×3=9）自动双向转换，含流式实时转换、伪流式兜底合成、思考内容（`reasoning_content` / `thinking` / `reasoning`）跨格式通道、图文混排跨格式展开
-- **代理 Key 管理**：`sk-` 前缀 32 位随机 Key、有效期、IP 白名单（前缀/精确/*）、可用模型白名单（原始名与解析真实名两档匹配）；短 Key 专门脱敏规则
-- **路由与熔断**：随机/轮询/加权随机三种路由策略；供应商内 Key 随机选择；失败重试（最多 3 次上游请求）；跨供应商自动降级；`(供应商, 模型)` 粒度冷却池（启用/停用、时长秒、失败重试次数）
-- **调用日志**（SQLite 异步写入，默认关闭可开启）：四组请求/响应数据完整记录（客户端→代理 / 代理→上游 / 上游→代理 / 代理→客户端）、重试明细（`retry_count` + `attempt_logs`）、Token 用量与输出速率、多维筛选（状态/供应商/Key/模型/关键词/时间）、详情三标签页结构化解析（SSE 流重组、工具调用参数格式化）
-- **管理后台**：JWT（HS256 + HMAC 摘要 + 登录 IP 限流）、仪表盘、统计分析（时间序列 + 多维度聚合 + 离线 Chart.js）、设置热加载
-- **工程化**：单文件部署（前端资源 `embed` 进二进制）、配置热加载、优雅关闭、跨平台交叉编译（Windows/Linux/macOS × 多架构）、零外部依赖（SQLite 纯 Go 驱动）
-
-**质量基线**：发布前经过多轮全面代码审查（行为正确性、并发竞态、安全面、边界条件）与全量回归测试，关键修复均配套回归用例固化（7 包、百余用例）。
 > AI生成

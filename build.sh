@@ -72,7 +72,7 @@ LLMProxy 编译脚本 (Linux / macOS)
   openbsd: amd64  arm64
   android: arm64
 可选环境变量:
-  VERSION=1.2.3 ./build.sh         注入版本号(默认使用源码 main.go 的 buildVersion)
+  VERSION=1.0.0 ./build.sh         注入版本号(默认使用源码 main.go 的 buildVersion)
   GOPROXY=... ./build.sh           覆盖默认代理
 USAGE
 }

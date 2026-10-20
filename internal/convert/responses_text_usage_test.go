@@ -1,11 +1,11 @@
-﻿package convert
+package convert
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// v1.0.0 代码审查修复回归测试：A3（Responses 文本块累积）/ C6（SSE 多行 data usage 提取）。
+// 回归测试：Responses 文本块累积 / SSE 多行 data usage 提取。
 
 // parseSSEResponsesOut 把转换器输出的 SSE 字节解析为事件 JSON 列表（按出现顺序）。
 // 复用包内私有 sseScanner，与生产解析路径同口径。
@@ -27,9 +27,9 @@ func parseSSEResponsesOut(t *testing.T, out []byte) []map[string]json.RawMessage
 	return evs
 }
 
-// TestResponsesTextBlockResetOnToolInterleave A3（V-P3）回归：文本→工具→文本交替流，
+// TestResponsesTextBlockResetOnToolInterleave 文本→工具→文本交替流，
 // Responses 发射器 closeTextItem 应按块重置 textAccum——
-// output_text.done 序列为 [A, B]（旧实现因未重置为 [A, AB]）；
+// output_text.done 序列为 [A, B]（因未重置为 [A, AB]）；
 // completed.output_text 由 totalText 跨块累计为 "AB"。
 func TestResponsesTextBlockResetOnToolInterleave(t *testing.T) {
 	conv := NewStreamConverter(FormatOpenAI, FormatResponses, "m")
@@ -67,15 +67,15 @@ func TestResponsesTextBlockResetOnToolInterleave(t *testing.T) {
 		}
 	}
 	if len(doneTexts) != 2 || doneTexts[0] != "A" || doneTexts[1] != "B" {
-		t.Fatalf("output_text.done 应为 [A B]（旧实现未重置 textAccum 误为 [A AB]），实际 %q", doneTexts)
+		t.Fatalf("output_text.done 应为 [A B]（未重置 textAccum 误为 [A AB]），实际 %q", doneTexts)
 	}
 	if completedText != "AB" {
 		t.Fatalf("completed.output_text 应为 AB（totalText 跨块累计），实际 %q", completedText)
 	}
 }
 
-// TestExtractUsageMultilineDataFrames C6 回归：SSE 规范允许一个事件的载荷分多行 data: 传输，
-// 按规范以 \n 拼接后解析；旧实现逐行独立解析导致多行帧全部解析失败、usage 误记 0。
+// TestExtractUsageMultilineDataFrames SSE 规范允许一个事件的载荷分多行 data: 传输，
+// 按规范以 \n 拼接后解析；逐行独立解析导致多行帧全部解析失败、usage 误记 0。
 func TestExtractUsageMultilineDataFrames(t *testing.T) {
 	multi := "data: {\"usage\":\ndata: {\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"
 	p, c, total := ExtractUsage([]byte(multi), true)

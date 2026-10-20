@@ -1,8 +1,8 @@
-﻿package convert
+package convert
 
-// v1.0.0 复查修复的回归测试（对应需求 12 版本更新记录 v1.0.0 小节）：
-//   G3  responsesSSE 兜底合成首事件为 response.created（created/in_progress 前置于条目事件）
-//   G4  parseResponsesResponse 解析 reasoning 条目 summary 通道（content 优先、按条目独立兜底）
+// 回归测试：
+//   responsesSSE 兜底合成首事件为 response.created（created/in_progress 前置于条目事件）
+//   parseResponsesResponse 解析 reasoning 条目 summary 通道（content 优先、按条目独立兜底）
 
 import (
 	"bytes"
@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// audit4FirstSSEEvent 提取合成 SSE 的首个事件名（sseFrame 输出 "event: <name>"）。
-func audit4FirstSSEEvent(sse []byte) string {
+// firstSSEEvent 提取合成 SSE 的首个事件名（sseFrame 输出 "event: <name>"）。
+func firstSSEEvent(sse []byte) string {
 	i := bytes.Index(sse, []byte("event: "))
 	if i < 0 {
 		return ""
@@ -24,10 +24,10 @@ func audit4FirstSSEEvent(sse []byte) string {
 	return string(rest[:j])
 }
 
-// TestBuildSSEResponsesFirstEventCreated G3 回归：上游忽略 stream 参数返回完整
+// TestBuildSSEResponsesFirstEventCreated 上游忽略 stream 参数返回完整
 // JSON 时（fallbackFullBodySSE 路径），带 reasoning 条目的响应合成 Responses SSE
-// 的首事件必须为 response.created。修复前 reasoning 条目事件先于 created 写入
-// （实测首事件为 response.output_item.added），违反官方事件序列。
+// 的首事件必须为 response.created。若 reasoning 条目事件先于 created 写入
+// （首事件为 response.output_item.added），则违反官方事件序列。
 func TestBuildSSEResponsesFirstEventCreated(t *testing.T) {
 	body := []byte(`{
 		"id":"resp_1","object":"response","created_at":1760000000,"status":"completed","model":"gpt-5",
@@ -40,8 +40,8 @@ func TestBuildSSEResponsesFirstEventCreated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first := audit4FirstSSEEvent(sse); first != "response.created" {
-		t.Fatalf("G3：首事件应 response.created，实际 %q——修复前 reasoning 条目事件先于 created 写入，违反官方序列", first)
+	if first := firstSSEEvent(sse); first != "response.created" {
+		t.Fatalf("首事件应 response.created，实际 %q——reasoning 条目事件先于 created 写入，违反官方序列", first)
 	}
 	// 序列完整性：created → in_progress → reasoning 条目 → 正文 → 终态
 	s := string(sse)
@@ -50,12 +50,12 @@ func TestBuildSSEResponsesFirstEventCreated(t *testing.T) {
 	idxReasoning := strings.Index(s, "response.reasoning_text.delta")
 	idxText := strings.Index(s, "response.output_text.delta")
 	if !(idxCreated < idxInProgress && idxInProgress < idxReasoning && idxReasoning < idxText) {
-		t.Fatalf("G3：事件顺序应 created→in_progress→reasoning→正文，实际 created=%d in_progress=%d reasoning=%d text=%d",
+		t.Fatalf("事件顺序应 created→in_progress→reasoning→正文，实际 created=%d in_progress=%d reasoning=%d text=%d",
 			idxCreated, idxInProgress, idxReasoning, idxText)
 	}
 	// 终态事件含完整 output 与 usage（reasoning 条目不因顺序调整而丢失）
 	if !strings.Contains(s, `"input_tokens":1`) || !strings.Contains(s, "response.completed") {
-		t.Fatalf("G3：终态事件应含 usage 与 completed")
+		t.Fatalf("终态事件应含 usage 与 completed")
 	}
 }
 
@@ -72,16 +72,17 @@ func TestBuildSSEResponsesFirstEventCreatedNoReasoning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first := audit4FirstSSEEvent(sse); first != "response.created" {
-		t.Fatalf("G3 对照组：首事件应 response.created，实际 %q", first)
+	if first := firstSSEEvent(sse); first != "response.created" {
+		t.Fatalf("对照组：首事件应 response.created，实际 %q", first)
 	}
 }
 
-// TestParseResponsesReasoningSummary G4 回归：reasoning 条目思考内容的通道解析。
-// 修复前解析器只认 content[].reasoning_text——官方非流式响应 reasoning 常仅有
-// summary 数组（content 为显式开启输出模式后的新增通道），此时思考内容静默丢失。
+// TestParseResponsesReasoningSummary reasoning 条目思考内容的通道解析。
+// 解析器须同时识别 content[].reasoning_text 与 summary 数组：官方非流式响应
+// 的 reasoning 常仅有 summary 数组（content 为显式开启输出模式后的新增通道），
+// 只认前者会导致思考内容静默丢失。
 func TestParseResponsesReasoningSummary(t *testing.T) {
-	// 场景 1：仅 summary 通道（官方非流式常见形态）——修复前 Reasoning 恒空
+	// 场景 1：仅 summary 通道（官方非流式常见形态）
 	summaryOnly := []byte(`{"id":"r1","object":"response","status":"completed","model":"o3",
 		"output":[
 			{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"step-by-step"}]},
@@ -93,10 +94,10 @@ func TestParseResponsesReasoningSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ir.Reasoning != "step-by-step" {
-		t.Fatalf("G4：仅 summary 通道时 Reasoning 应为思考摘要，实际 %q（修复前静默丢失）", ir.Reasoning)
+		t.Fatalf("仅 summary 通道时 Reasoning 应为思考摘要，实际 %q（静默丢失）", ir.Reasoning)
 	}
 	if ir.Text != "answer" {
-		t.Fatalf("G4：正文解析不应受影响，实际 %q", ir.Text)
+		t.Fatalf("正文解析不应受影响，实际 %q", ir.Text)
 	}
 
 	// 场景 2：content 优先——content 有 reasoning_text 时不取 summary
@@ -108,11 +109,11 @@ func TestParseResponsesReasoningSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ir2.Reasoning != "C" {
-		t.Fatalf("G4：content 通道优先，Reasoning 应为 C，实际 %q", ir2.Reasoning)
+		t.Fatalf("content 通道优先，Reasoning 应为 C，实际 %q", ir2.Reasoning)
 	}
 
 	// 场景 3：多 reasoning 条目——第一条 content 命中、第二条仅 summary，
-	// 兜底判定按条目独立进行（修复初版的全局判定会漏掉第二条的 summary）
+	// 兜底判定按条目独立进行（全局判定会漏掉第二条的 summary）
 	multi := []byte(`{"id":"r3","object":"response","status":"completed","model":"o3",
 		"output":[
 			{"type":"reasoning","id":"rs_a","summary":[],"content":[{"type":"reasoning_text","text":"thinkingA"}]},
@@ -124,6 +125,6 @@ func TestParseResponsesReasoningSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ir3.Reasoning != "thinkingAsumB" {
-		t.Fatalf("G4：兜底应按条目独立判定，Reasoning 应为 thinkingAsumB，实际 %q", ir3.Reasoning)
+		t.Fatalf("兜底应按条目独立判定，Reasoning 应为 thinkingAsumB，实际 %q", ir3.Reasoning)
 	}
 }

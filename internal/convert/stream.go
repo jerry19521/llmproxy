@@ -45,7 +45,7 @@ type StreamEvent struct {
 const (
 	evStart     = "start"
 	evText      = "text"
-	evThinking  = "thinking" // v1.0.0（M6）：思考/推理内容增量（Anthropic thinking / OpenAI reasoning_content / Responses reasoning）
+	evThinking  = "thinking" // 思考/推理内容增量（Anthropic thinking / OpenAI reasoning_content / Responses reasoning）
 	evToolStart = "tool_start"
 	evToolArgs  = "tool_args"
 	evToolEnd   = "tool_end"
@@ -69,11 +69,12 @@ func (e *UpstreamStreamError) Error() string { return "上游流式响应错误:
 // 事件以空行（\n\n 或 \r\n\r\n）分隔；同一事件内多行 data: 按规范以 \n 拼接；
 // event:/id:/retry: 等行忽略（载荷自带类型信息，三格式均可从 JSON 判断）。
 type sseScanner struct {
-	buf []byte
+	buf     []byte
+	dropped int64 // 缓冲溢出保护丢弃的累计字节数（可观测性：丢弃后已无法恢复）
 }
 
 // maxScannerBuffer 帧缓冲上限（16MB）：防御故障/恶意上游持续发送
-// 永不以空行结尾的字节流导致缓冲无界增长（L12 修复；代理层对响应副本的
+// 永不以空行结尾的字节流导致缓冲无界增长（代理层对响应副本的
 // 64MB 上限不约束喂入扫描器的字节）。
 const maxScannerBuffer = 16 << 20
 
@@ -95,7 +96,9 @@ func (s *sseScanner) feed(chunk []byte) []string {
 	// 溢出保护：超限时保留尾部一半缓冲——该流必然已非规范，
 	// 丢弃旧字节优于 OOM，且后续若出现空行仍可解析最新事件
 	if len(s.buf) > maxScannerBuffer {
-		s.buf = s.buf[len(s.buf)-maxScannerBuffer/2:]
+		drop := len(s.buf) - maxScannerBuffer/2
+		s.buf = s.buf[drop:]
+		s.dropped += int64(drop)
 	}
 	return out
 }
@@ -114,8 +117,8 @@ func (s *sseScanner) remaining() []string {
 }
 
 // sseEventEnd 查找事件结束分隔符位置（\n\n 或 \r\n\r\n），返回 (索引, 分隔长度)；未找到返回 (-1,0)。
-// v1.0.0（M4）：按“位置先后”而非“分隔符类型优先级”切割——两种分隔符都查找、取更早
-// 出现者。旧实现先全局找 \n\n 再找 \r\n\r\n，混合行尾流（CRLF 分隔事件在前、LF 分隔事件
+// 按“位置先后”而非“分隔符类型优先级”切割——两种分隔符都查找、取更早
+// 出现者。先全局找 \n\n 再找 \r\n\r\n，混合行尾流（CRLF 分隔事件在前、LF 分隔事件
 // 在后，常见于多层代理/网关转写）中 \n\n 位置更靠后却被优先选中，导致前面所有 CRLF 分隔
 // 事件与后续事件合并为一个事件块，多行 data 拼接后成为非法 JSON、成批丢弃。
 // 注：\r\n\r\n（0d 0a 0d 0a）内部不含连续 0a 0a，两种分隔符位置不会重叠，取小者安全。
@@ -182,8 +185,8 @@ func parseOpenAIStreamPayload(payload string) []StreamEvent {
 			Delta struct {
 				Role      string  `json:"role"`
 				Content   *string `json:"content"`
-				Reasoning string  `json:"reasoning_content"` // v1.0.0（M6）：DeepSeek R1/兼容网关惯例
-				Thinking  string  `json:"reasoning"`         // v1.0.0（M6）：部分网关的短字段名
+				Reasoning string  `json:"reasoning_content"` // DeepSeek R1/兼容网关惯例
+				Thinking  string  `json:"reasoning"`         // 部分网关的短字段名
 				ToolCalls []struct {
 					Index    int    `json:"index"`
 					ID       string `json:"id"`
@@ -214,13 +217,13 @@ func parseOpenAIStreamPayload(payload string) []StreamEvent {
 	if chunk.ID != "" || chunk.Model != "" {
 		evs = append(evs, StreamEvent{Kind: evStart, ID: chunk.ID, Model: chunk.Model})
 	}
-	if chunk.Usage != nil && (chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0) {
+	if chunk.Usage != nil && (chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 || chunk.Usage.TotalTokens > 0) {
 		evs = append(evs, StreamEvent{Kind: evUsage,
 			Prompt: chunk.Usage.PromptTokens, Completion: chunk.Usage.CompletionTokens, Total: chunk.Usage.TotalTokens})
 	}
 	if len(chunk.Choices) > 0 {
 		ch := chunk.Choices[0]
-		// v1.0.0（M6）：思考增量优先于正文（reasoning_content 为 DeepSeek/兼容网关惯例字段名）
+		// 思考增量优先于正文（reasoning_content 为 DeepSeek/兼容网关惯例字段名）
 		if r := nonEmpty(ch.Delta.Reasoning, ch.Delta.Thinking); r != "" {
 			evs = append(evs, StreamEvent{Kind: evThinking, Text: r})
 		}
@@ -256,13 +259,13 @@ func parseAnthropicStreamPayload(payload string) []StreamEvent {
 			Text        string `json:"text"`
 			PartialJSON string `json:"partial_json"`
 			StopReason  string `json:"stop_reason"`
-			Thinking    string `json:"thinking"` // v1.0.0（M6）：thinking_delta 的思考增量
+			Thinking    string `json:"thinking"` // thinking_delta 的思考增量
 		} `json:"delta"`
 		ContentBlock *struct {
 			Type     string `json:"type"`
 			ID       string `json:"id"`
 			Name     string `json:"name"`
-			Thinking string `json:"thinking"` // v1.0.0（M6）：thinking 块的思考内容（start 帧可携带）
+			Thinking string `json:"thinking"` // thinking 块的思考内容（start 帧可携带）
 		} `json:"content_block"`
 		Message *struct {
 			ID    string `json:"id"`
@@ -300,7 +303,7 @@ func parseAnthropicStreamPayload(payload string) []StreamEvent {
 		}
 		evs = append(evs, e)
 	case "content_block_start":
-		// v1.0.0（M6）：extended thinking 块的 start 事件；signature 不可跨格式重建（跳过，
+		// extended thinking 块的 start 事件；signature 不可跨格式重建（跳过，
 		// 客户端回传历史时我们的解析器同样忽略 thinking 块，不会携带无效 signature 回上游）
 		if ev.ContentBlock != nil && ev.ContentBlock.Type == "thinking" && ev.ContentBlock.Thinking != "" {
 			evs = append(evs, StreamEvent{Kind: evThinking, Text: ev.ContentBlock.Thinking})
@@ -311,7 +314,7 @@ func parseAnthropicStreamPayload(payload string) []StreamEvent {
 		}
 	case "content_block_delta":
 		switch ev.Delta.Type {
-		case "thinking_delta": // v1.0.0（M6）：思考增量
+		case "thinking_delta": // 思考增量
 			if ev.Delta.Thinking != "" {
 				evs = append(evs, StreamEvent{Kind: evThinking, Text: ev.Delta.Thinking})
 			}
@@ -405,7 +408,7 @@ func parseResponsesStreamPayload(payload string) []StreamEvent {
 			evs = append(evs, StreamEvent{Kind: evText, Text: ev.Delta})
 		}
 	case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
-		// v1.0.0（M6）：Responses 推理条目的思考增量（官方两种事件形态均归一）
+		// Responses 推理条目的思考增量（官方两种事件形态均归一）
 		if ev.Delta != "" {
 			evs = append(evs, StreamEvent{Kind: evThinking, Text: ev.Delta})
 		}
@@ -443,7 +446,7 @@ func parseResponsesStreamPayload(payload string) []StreamEvent {
 		}
 		evs = append(evs, StreamEvent{Kind: evError, Text: msg})
 	case "error":
-		// M8 修复：官方流式中途错误事件（event: error / {"type":"error",...}）此前无处理分支，
+		// 官方流式中途错误事件（event: error / {"type":"error",...}）此前无处理分支，
 		// 事件被静默丢弃并在 EOF 时被 finalize 伪造为成功终止流；现归一为 evError
 		// （代理层据此按失败处理：未写客户端时可重试，已写则断流记日志）。
 		// 错误消息优先顶层 message，兼容嵌套 error.message。
@@ -495,8 +498,8 @@ func (e *openAIEmitter) chunkBytes(delta map[string]interface{}, finish interfac
 	id := nonEmpty(e.id, "chatcmpl-llmproxy")
 	created := e.created
 	if created == 0 {
-		// v1.0.0（C5）：首个输出帧固化 created，后续帧复用——官方语义为同一响应
-		// 所有 chunk 时间戳恒定，旧实现逐帧取当前时间导致跨秒流内不一致。
+		// 首个输出帧固化 created，后续帧复用——官方语义为同一响应
+		// 所有 chunk 时间戳恒定，逐帧取当前时间导致跨秒流内不一致。
 		e.created = nowUnix()
 		created = e.created
 	}
@@ -522,7 +525,7 @@ func (e *openAIEmitter) Feed(ev StreamEvent) []byte {
 	case evText:
 		buf.Write(e.chunkBytes(map[string]interface{}{"content": ev.Text}, nil, false, 0, 0, 0))
 	case evThinking:
-		// v1.0.0（M6）：思考增量走 reasoning_content（DeepSeek R1/兼容网关惯例字段，
+		// 思考增量走 reasoning_content（DeepSeek R1/兼容网关惯例字段，
 		// 官方上游会忽略未知字段，客户端 SDK 可识别）
 		buf.Write(e.chunkBytes(map[string]interface{}{"reasoning_content": ev.Text}, nil, false, 0, 0, 0))
 	case evToolStart:
@@ -566,15 +569,15 @@ type anthropicEmitter struct {
 	finished     bool
 	textOpen     bool // 文本块打开中
 	textBlockIdx int  // 当前文本块的 index（每次打开分配新索引）
-	thinkingOpen bool // v1.0.0（M6）：thinking 块打开中
+	thinkingOpen bool // thinking 块打开中
 	thinkingIdx  int  // 当前 thinking 块的 index
 	nBlocks      int  // 下一个可分配的内容块号（文本块与工具块统一从此分配，单调递增）
 	toolBlocks   map[int]int
-	toolArgsSeen map[int]bool // 客户端块索引 → 是否已发送过参数增量（M5：无参工具补 "{}"）
+	toolArgsSeen map[int]bool // 客户端块索引 → 是否已发送过参数增量（无参工具补 "{}"）
 	closedTool   map[int]bool
 }
 
-// openThinkingBlock 打开 thinking 块（v1.0.0 M6）：思考增量到达时惰性开启；
+// openThinkingBlock 打开 thinking 块：思考增量到达时惰性开启；
 // signature 无法跨格式重建（留空），客户端展示用途不校验；客户端回传历史时
 // 我们的请求解析器忽略 thinking 块，不会携带无效 signature 回上游。
 func (e *anthropicEmitter) openThinkingBlock() []byte {
@@ -622,8 +625,8 @@ func (e *anthropicEmitter) ensureStart() []byte {
 }
 
 // openTextBlock 打开文本块。
-// M7 修复：文本块与工具块统一从 nBlocks 顺序分配索引，不再硬编码 index 0——
-// 上游先工具后文本（或文本→工具→文本交替）时，旧实现会使 text 块与 tool 块
+// 文本块与工具块统一从 nBlocks 顺序分配索引，不再硬编码 index 0——
+// 上游先工具后文本（或文本→工具→文本交替）时，会使 text 块与 tool 块
 // 重复使用 index 0，产出非法 Anthropic 事件序列（严格 SDK 解析失败断连）。
 func (e *anthropicEmitter) openTextBlock() []byte {
 	if e.textOpen {
@@ -663,14 +666,14 @@ func (e *anthropicEmitter) Feed(ev StreamEvent) []byte {
 		buf.Write(e.ensureStart())
 	case evText:
 		buf.Write(e.ensureStart())
-		buf.Write(e.closeThinkingBlock()) // v1.0.0（M6）：思考块先于正文块关闭
+		buf.Write(e.closeThinkingBlock()) // 思考块先于正文块关闭
 		buf.Write(e.openTextBlock())
 		sseFrame(&buf, "content_block_delta", map[string]interface{}{
 			"type": "content_block_delta", "index": e.textBlockIdx,
 			"delta": map[string]interface{}{"type": "text_delta", "text": ev.Text},
 		})
 	case evThinking:
-		// v1.0.0（M6）：思考增量
+		// 思考增量
 		buf.Write(e.ensureStart())
 		buf.Write(e.openThinkingBlock())
 		sseFrame(&buf, "content_block_delta", map[string]interface{}{
@@ -679,7 +682,7 @@ func (e *anthropicEmitter) Feed(ev StreamEvent) []byte {
 		})
 	case evToolStart:
 		buf.Write(e.ensureStart())
-		buf.Write(e.closeThinkingBlock()) // v1.0.0（M6）
+		buf.Write(e.closeThinkingBlock())
 		buf.Write(e.closeTextBlock())
 		if e.toolBlocks == nil {
 			e.toolBlocks = map[int]int{}
@@ -708,7 +711,7 @@ func (e *anthropicEmitter) Feed(ev StreamEvent) []byte {
 		if idx, ok := e.toolBlocks[ev.ToolIndex]; ok && !e.closedTool[idx] {
 			e.closedTool[idx] = true
 			if !e.toolArgsSeen[idx] {
-				// v1.0.0（M5）：无参工具全程无参数增量——上游只发过 name+空 arguments 首片。
+				// 无参工具全程无参数增量——上游只发过 name+空 arguments 首片。
 				// 补发一次 partial_json "{}"，否则客户端聚合 input 为空串、JSON 解析失败
 				// （官方流对 input:{} 的 tool_use 至少发一次 "{}"）。
 				sseFrame(&buf, "content_block_delta", map[string]interface{}{
@@ -731,7 +734,7 @@ func (e *anthropicEmitter) Finish(finish string, p, c, t int64) []byte {
 	e.finished = true
 	var buf bytes.Buffer
 	buf.Write(e.ensureStart())
-	buf.Write(e.closeThinkingBlock()) // v1.0.0（M6）：未关的 thinking 块收尾
+	buf.Write(e.closeThinkingBlock()) // 未关的 thinking 块收尾
 	buf.Write(e.closeTextBlock())
 	sseFrame(&buf, "message_delta", map[string]interface{}{
 		"type":  "message_delta",
@@ -748,13 +751,13 @@ type responsesEmitter struct {
 	model, id string
 	started   bool
 	finished  bool
-	createdAt int64 // v1.0.0（C5）：首个输出帧固化，后续事件复用（旧实现逐帧取当前时间）
+	createdAt int64 // 首个输出帧固化，后续事件复用（逐帧取当前时间）
 
-	reasoningOpen bool // v1.0.0（M6）：reasoning 条目打开中
+	reasoningOpen bool // reasoning 条目打开中
 	reasoningIdx  int
 	reasonAccum   strings.Builder // 当前 reasoning 条目的思考累积
 	textOpen      bool
-	textAccum     strings.Builder          // 当前打开文本块的累积（块级：output_text.done 用，关闭时重置，v1.0.0 修复 V-P3）
+	textAccum     strings.Builder          // 当前打开文本块的累积（块级：output_text.done 用，关闭时重置，）
 	totalText     strings.Builder          // 全响应输出文本（跨块累计：response.completed 的 output_text 用）
 	textIdx       int                      // 文本条目的 output_index（首个条目时为 0）
 	nextIdx       int                      // 下一个可分配的 output_index
@@ -779,7 +782,7 @@ func (e *responsesEmitter) ensureStart() []byte {
 		e.items = []map[string]interface{}{}
 	}
 	if e.createdAt == 0 {
-		e.createdAt = nowUnix() // v1.0.0（C5）：created_at 全响应恒定
+		e.createdAt = nowUnix() // created_at 全响应恒定
 	}
 	var buf bytes.Buffer
 	resp := func(status string) map[string]interface{} {
@@ -817,7 +820,7 @@ func (e *responsesEmitter) openTextItem() []byte {
 	return buf.Bytes()
 }
 
-// openReasoningItem 打开 reasoning 条目（v1.0.0 M6）：思考增量到达时惰性开启。
+// openReasoningItem 打开 reasoning 条目：思考增量到达时惰性开启。
 // 事件结构对齐官方 reasoning 条目流：output_item.added → reasoning_text.delta… → 收尾关闭。
 func (e *responsesEmitter) openReasoningItem() []byte {
 	if e.reasoningOpen {
@@ -866,7 +869,7 @@ func (e *responsesEmitter) closeReasoningItem() []byte {
 }
 
 // closeTextItem 关闭当前文本条目并发出 done 事件。
-// v1.0.0（V-P3）：done/completed 的块级文本取当前块的累积后重置 textAccum——
+// done/completed 的块级文本取当前块的累积后重置 textAccum——
 // 文本→工具→文本交替流中，后续文本块的 done 不再携带前序块的累积内容；
 // 全响应口径的 completed.output_text 改由 totalText 提供。
 func (e *responsesEmitter) closeTextItem() []byte {
@@ -910,7 +913,7 @@ func (e *responsesEmitter) Feed(ev StreamEvent) []byte {
 		buf.Write(e.ensureStart())
 	case evText:
 		buf.Write(e.ensureStart())
-		buf.Write(e.closeReasoningItem()) // v1.0.0（M6）：reasoning 条目先于正文条目关闭
+		buf.Write(e.closeReasoningItem()) // reasoning 条目先于正文条目关闭
 		buf.Write(e.openTextItem())
 		e.textAccum.WriteString(ev.Text)
 		e.totalText.WriteString(ev.Text) // 全响应口径：completed.output_text 需跨块累计
@@ -919,7 +922,7 @@ func (e *responsesEmitter) Feed(ev StreamEvent) []byte {
 			"output_index": e.textIdx, "content_index": 0, "delta": ev.Text,
 		})
 	case evThinking:
-		// v1.0.0（M6）：思考增量
+		// 思考增量
 		buf.Write(e.ensureStart())
 		buf.Write(e.openReasoningItem())
 		e.reasonAccum.WriteString(ev.Text)
@@ -929,7 +932,7 @@ func (e *responsesEmitter) Feed(ev StreamEvent) []byte {
 		})
 	case evToolStart:
 		buf.Write(e.ensureStart())
-		buf.Write(e.closeReasoningItem()) // v1.0.0（M6）
+		buf.Write(e.closeReasoningItem())
 		buf.Write(e.closeTextItem())
 		if e.toolIdx == nil {
 			e.toolIdx = map[int]int{}
@@ -959,7 +962,7 @@ func (e *responsesEmitter) Feed(ev StreamEvent) []byte {
 		if meta := e.toolMeta[ev.ToolIndex]; meta != nil {
 			args := meta.argsAcc.String()
 			if args == "" {
-				// v1.0.0（M5）：无参工具参数为空串时以 "{}" 输出——空串 arguments 会让
+				// 无参工具参数为空串时以 "{}" 输出——空串 arguments 会让
 				// Codex 等严格客户端的 serde 解析失败，工具调用整体报废。
 				args = "{}"
 			}
@@ -987,9 +990,9 @@ func (e *responsesEmitter) Finish(finish string, p, c, t int64) []byte {
 	e.finished = true
 	var buf bytes.Buffer
 	buf.Write(e.ensureStart())
-	buf.Write(e.closeReasoningItem()) // v1.0.0（M6）：未关的 reasoning 条目收尾
+	buf.Write(e.closeReasoningItem()) // 未关的 reasoning 条目收尾
 	buf.Write(e.closeTextItem())
-	text := e.totalText.String() // 全响应输出文本（跨块累计，v1.0.0 修复 V-P3）
+	text := e.totalText.String() // 全响应输出文本（跨块累计，）
 	finalEvent := "response.completed"
 	status := "completed"
 	var incomplete map[string]interface{}
@@ -1000,7 +1003,7 @@ func (e *responsesEmitter) Finish(finish string, p, c, t int64) []byte {
 	}
 	finalResp := map[string]interface{}{
 		"id": nonEmpty(e.id, "resp_llmproxy"), "object": "response",
-		// v1.0.0（C5）：终态事件的 created_at 复用首个输出帧固化的值，与开场事件一致。
+		// 终态事件的 created_at 复用首个输出帧固化的值，与开场事件一致。
 		"created_at": e.createdAt, "status": status, "model": nonEmpty(e.model, "gpt"), "output": e.items,
 		"usage":       map[string]int64{"input_tokens": p, "output_tokens": c, "total_tokens": t},
 		"output_text": text,
@@ -1028,10 +1031,9 @@ type StreamConverter struct {
 	usageP      int64
 	usageC      int64
 	usageT      int64
-	sawUsage    bool
 	sawStart    bool
 	sawText     bool // 已向发射器转发首个文本事件（用于识别"生成阶段开始"）
-	sawAnyEvent bool // 流中是否出现过任何可识别事件（v1.0.0 V-P2：全坏帧判定用）
+	sawAnyEvent bool // 流中是否出现过任何可识别事件（全坏帧判定用）
 	finishSent  bool
 	finalFinish string
 }
@@ -1056,8 +1058,8 @@ func (c *StreamConverter) FeedChunk(chunk []byte) ([]byte, error) {
 }
 
 // Finish 上游流正常结束时调用：处理残余帧并输出收尾帧（含 usage）。
-// v1.0.0（C6）：残余帧中的错误事件不再被吞——上游在流末尾发出错误事件且该帧
-// 恰无尾随空行（EOF 截断、异常断流时常见）时，旧实现静默丢弃错误并伪造成功
+// 残余帧中的错误事件不再被吞——上游在流末尾发出错误事件且该帧
+// 恰无尾随空行（EOF 截断、异常断流时常见）时，静默丢弃错误并伪造成功
 // 收尾帧，客户端收到看似正常的成功流且日志层丢失错误信息；现将错误上抛，
 // 由代理层按失败处理（已写客户端则断流记日志）。
 func (c *StreamConverter) Finish() ([]byte, error) {
@@ -1080,7 +1082,7 @@ func (c *StreamConverter) convertPayload(payload string) ([]byte, error) {
 	}
 	var out bytes.Buffer
 	for _, ev := range ParseStreamPayload(c.from, payload) {
-		c.sawAnyEvent = true // 出现过至少一个可识别事件（v1.0.0 V-P2：全坏帧流判定）
+		c.sawAnyEvent = true // 出现过至少一个可识别事件（全坏帧流判定）
 		switch ev.Kind {
 		case evError:
 			return out.Bytes(), &UpstreamStreamError{Message: ev.Text}
@@ -1106,7 +1108,6 @@ func (c *StreamConverter) convertPayload(payload string) ([]byte, error) {
 			if ev.Total > 0 {
 				c.usageT = ev.Total
 			}
-			c.sawUsage = true
 		case evFinish:
 			// 只记录 finish 原因，不立即 finalize：OpenAI CC 流的 finish_reason chunk 之后
 			// 还会有 usage chunk（stream_options.include_usage）与 [DONE]，立即终止会把
@@ -1127,7 +1128,7 @@ func (c *StreamConverter) convertPayload(payload string) ([]byte, error) {
 				ev.ToolIndex = c.toolMap[ev.ToolIndex]
 				out.Write(c.emit(ev))
 			}
-			// v1.0.0（C8）：已注册 index 的重复 tool_start（个别兼容网关把 function.name
+			// 已注册 index 的重复 tool_start（个别兼容网关把 function.name
 			// 拆多个 delta 分片，每个非空分片都会再触发一次 start）不再转发——
 			// 防止 emitter 重复开块、块索引被覆盖造成事件结构错乱；代价是分片 name
 			// 只保留首片（规范上游 name 一次性发送，不受影响）。
@@ -1219,17 +1220,19 @@ func (c *StreamConverter) Finished() bool {
 	return c.finishSent
 }
 
-// HasAnyEvent 返回流中是否出现过任何可识别事件（start/文本/工具/usage/finish，v1.0.0）。
+// HasAnyEvent 返回流中是否出现过任何可识别事件（start/文本/工具/usage/finish）。
 // 用于代理层判定「上游返回 200 + SSE 但全部帧无法解析」（如 data: <html> 坏帧）的场景：
 // 无任何事件 ⇒ 转换器从未产生输出 ⇒ 客户端未收到任何字节，可安全按失败重试——
-// 而不是在 EOF 时伪造成功终止流（V-P2 修复）。
+// 而不是在 EOF 时伪造成功终止流。
 func (c *StreamConverter) HasAnyEvent() bool {
 	return c.sawAnyEvent
 }
 
-// Usage 返回已累积的用量（prompt, completion, total）；未收到 usage 时返回 false。
-func (c *StreamConverter) Usage() (int64, int64, int64, bool) {
-	return c.usageP, c.usageC, c.usageT, c.sawUsage
+// DroppedBytes 返回帧缓冲溢出保护丢弃的累计字节数（正常流恒为 0）。
+// 代理层在流结束后据此告警：丢弃意味着部分事件已不可恢复，
+// 但流仍可能“成功”结束，无此计数则故障上游/恶意代理的异常流完全不可见。
+func (c *StreamConverter) DroppedBytes() int64 {
+	return c.scanner.dropped
 }
 
 // FirstContentEmitted 返回是否已向客户端写出首个非空文本事件。

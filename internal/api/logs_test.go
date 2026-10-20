@@ -26,16 +26,16 @@ func TestMaskLogAPIKeys(t *testing.T) {
 	}
 }
 
-// TestNormalizeTimeParamEndOfDay L7 回归：end_time 传纯日期时补全为当天 23:59:59
-// （旧实现统一归一化为当天 00:00:00，直接调 API 传纯日期会漏掉当天全部日志）。
-// v1.0.0（L1）：新增 ok 返回值——非法输入返回 false，调用方 400 拒绝
-// （旧实现原样透传进 SQL 字符串比较：非法 start_time 恒假过滤全部、非法 end_time 恒真等于没过滤）。
+// TestNormalizeTimeParamEndOfDay L7 end_time 传纯日期时补全为当天 23:59:59
+// （统一归一化为当天 00:00:00，直接调 API 传纯日期会漏掉当天全部日志）。
+// 新增 ok 返回值——非法输入返回 false，调用方 400 拒绝
+// （原样透传进 SQL 字符串比较：非法 start_time 恒假过滤全部、非法 end_time 恒真等于没过滤）。
 func TestNormalizeTimeParamEndOfDay(t *testing.T) {
 	// 起始时间：纯日期 → 当天 00:00:00
 	if got, ok := normalizeTimeParam("2026-09-30", false); !ok || !strings.HasPrefix(got, "2026-09-30T00:00:00") {
 		t.Errorf("start_time 纯日期应归一化为当天 00:00:00，实际 %q ok=%v", got, ok)
 	}
-	// 结束时间：纯日期 → 当天 23:59:59（v1.0.0 L7 修复点）
+	// 结束时间：纯日期 → 当天 23:59:59（L7 ）
 	if got, ok := normalizeTimeParam("2026-09-30", true); !ok || !strings.HasPrefix(got, "2026-09-30T23:59:59") {
 		t.Errorf("end_time 纯日期应归一化为当天 23:59:59，实际 %q ok=%v", got, ok)
 	}
@@ -47,7 +47,7 @@ func TestNormalizeTimeParamEndOfDay(t *testing.T) {
 	if got, ok := normalizeTimeParam("", true); !ok || got != "" {
 		t.Errorf("空输入应返回空串，实际 %q ok=%v", got, ok)
 	}
-	// 非法输入 → ok=false（L1 修复点：不再原样透传进 SQL）
+	// 非法输入 → ok=false（L1 不再原样透传进 SQL）
 	if _, ok := normalizeTimeParam("abc", false); ok {
 		t.Errorf("非法 start_time 'abc' 应返回 ok=false")
 	}

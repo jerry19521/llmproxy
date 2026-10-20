@@ -1,4 +1,4 @@
-﻿// Package proxy 实现核心代理转发：代理 Key 认证、模型别名解析、路由选择、
+// Package proxy 实现核心代理转发：代理 Key 认证、模型别名解析、路由选择、
 // 失败重试与跨供应商降级、冷却熔断、多格式（Chat Completions / Responses / Anthropic）
 // 请求转换与透传、流式边收边转发、调用日志写入。
 package proxy
@@ -24,10 +24,6 @@ import (
 	"llmproxy/internal/core"
 	"llmproxy/internal/logsdb"
 )
-
-// Version 构建版本号。与 main.go 的 buildVersion 默认值保持一致：
-// 启动时 main 会用 -ldflags "-X main.buildVersion=<x.y.z>" 覆盖为实际构建版本。
-const Version = "1.0.0"
 
 // Handler 代理转发处理器。
 type Handler struct {
@@ -65,11 +61,6 @@ func (h *Handler) LogStore() *logsdb.LogStore {
 }
 
 // ===== 错误响应 =====
-
-// WriteError 输出 OpenAI 风格错误 JSON（兼容保留：默认 openai 格式）。
-func WriteError(w http.ResponseWriter, status int, message, errType, code string) {
-	convert.WriteError(w, convert.FormatOpenAI, status, errType, code, message)
-}
 
 // setCORSHeaders 代理转发端点跨域头。
 func setCORSHeaders(w http.ResponseWriter) {
@@ -165,13 +156,13 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request, clientFor
 	return key, nil
 }
 
-// filterCandidatesByWhitelist 按代理 Key 可用模型白名单过滤候选供应商集合（v1.0.0，V-M4 修复）。
-// 匹配口径（v1.0.0 M2 + v1.0.0 V-M4）：
+// filterCandidatesByWhitelist 按代理 Key 可用模型白名单过滤候选供应商集合。
+// 匹配口径：
 //   - 未配置白名单（空）：不限制，原样返回；
-//   - 客户端传入的原始模型名（requested）命中白名单：放行全部候选（v1.0.0 M2 口径不变）；
+//   - 客户端传入的原始模型名（requested）命中白名单：放行全部候选；
 //   - 否则：仅保留「该候选自身命中的真实模型名」在白名单内的候选。多供应商共享别名时
-//     （同一别名在不同供应商指向不同真实名），白名单配置非首候选的真实名不再导致合法调用
-//     被整单 403（旧实现只按全局首候选的真实名归一匹配），且路由只在白名单允许的候选中选择。
+//     （同一别名在不同供应商指向不同真实名），白名单配置非首候选的真实名不应导致合法调用
+//     被整单 403，且路由只在白名单允许的候选中选择。
 //
 // 过滤后候选为空 → 返回 nil（调用方返回 403）。
 func filterCandidatesByWhitelist(cands []core.ProviderCandidate, requested string, whitelist []string) []core.ProviderCandidate {
@@ -180,7 +171,7 @@ func filterCandidatesByWhitelist(cands []core.ProviderCandidate, requested strin
 	}
 	for _, m := range whitelist {
 		if strings.EqualFold(m, requested) {
-			return cands // 原始名命中：放行全部（v1.0.0 M2 口径）
+			return cands // 原始名命中：放行全部
 		}
 	}
 	out := make([]core.ProviderCandidate, 0, len(cands))
@@ -238,7 +229,7 @@ type upstreamResult struct {
 }
 
 // newUpstreamRequest 构建上游 HTTP 请求（认证头按供应商接口类型设置）。
-// defaultUA：全局默认 User-Agent（v1.0.0）；先于供应商自定义头应用，后者可覆盖。
+// defaultUA：全局默认 User-Agent；先于供应商自定义头应用，后者可覆盖。
 func newUpstreamRequest(ctx context.Context, p *config.Provider, key, url string, body []byte, apiType, defaultUA string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -352,7 +343,7 @@ func callUpstream(ctx context.Context, client *http.Client, p *config.Provider, 
 type streamAttempt struct {
 	result         *upstreamResult // 状态码/响应头/上游累积副本/耗时/首字节/错误
 	started        bool            // 已向客户端写出数据（true 后本次调用不可重试）
-	clientCanceled bool            // 客户端断开导致本次尝试失败（v1.0.0 V-N1：首字节前断开不再重试）
+	clientCanceled bool            // 客户端断开导致本次尝试失败（首字节前断开不再重试）
 	clientBytes    []byte          // 发给客户端的完整字节（同格式=上游副本；跨格式=转换输出；日志 client_resp_body 用）
 	sentBytes      int64           // 实际写入客户端的字节数（与 clientBytes 不同：写入中途失败时仅记已成功写出的字节）
 	lastSentMs     int64           // 最后一个成功写入客户端的时刻（用于客户端断开类失败的事后定位）
@@ -378,7 +369,7 @@ func (h *Handler) tryStreamForward(w http.ResponseWriter, ctx, clientCtx context
 	sameFmt bool, realModel string) *streamAttempt {
 
 	start := time.Now()
-	// v1.0.0：全局默认 User-Agent 随请求应用（供应商自定义头仍可在 newUpstreamRequest 内覆盖）
+	// 全局默认 User-Agent 随请求应用（供应商自定义头仍可在 newUpstreamRequest 内覆盖）
 	req, rerr := newUpstreamRequest(ctx, p, key, url, body, pType, h.State.Snap().DefaultUserAgent)
 	if rerr != nil {
 		msg := "构建上游请求失败: " + rerr.Error()
@@ -397,9 +388,9 @@ func (h *Handler) tryStreamForward(w http.ResponseWriter, ctx, clientCtx context
 	// 客户端断开 watchdog：r.Context() cancel 时立刻关掉上游 Body 让 Read 退出循环，
 	// 避免等上游自然 EOF（用户已不需要的数据）。goroutine 通过 watchdogDone 通道被告知可退出；
 	// sync.Once 保证 close 只触发一次（goroutine 内已写入 resp.Body.Close 也可能同步到此通道）。
-	// v1.0.0（M1）：clientCanceled 改用 atomic.Bool——watchdog goroutine 写、主流程在流式
+	// clientCanceled 改用 atomic.Bool——watchdog goroutine 写、主流程在流式
 	// 收尾读取，普通 bool 之间无任何同步边；上游 io.EOF 正常退出与客户端断开几乎同时发生时
-	// 构成数据竞态（-race 需 CGO、Windows 无 gcc 无法运行，竞态将长期潜伏）。读写各一处，零行为变化。
+	// 会构成数据竞态（-race 需 CGO、Windows 无 gcc 无法运行，竞态将长期潜伏）。读写各一处，零行为变化。
 	var clientCanceled atomic.Bool
 	watchdogDone := make(chan struct{})
 	watchdogStop := sync.Once{}
@@ -436,7 +427,7 @@ func (h *Handler) tryStreamForward(w http.ResponseWriter, ctx, clientCtx context
 	if clientCanceled.Load() && strings.HasPrefix(att.err, "读取上游响应失败") {
 		att.err = "客户端断开"
 		att.result.Err = "客户端断开"
-		att.clientCanceled = true // v1.0.0 V-N1：标记断开成因，供重试决策使用
+		att.clientCanceled = true // 标记断开成因，供重试决策使用
 	}
 	return att
 }
@@ -463,7 +454,7 @@ func copyUpstreamHeaders(w http.ResponseWriter, src http.Header) {
 // 不包含 "reasoning"——reasoning 流中 reasoning 字段出现早于 content，若纳入会
 // 导致 reasoning 阶段被误判为生成起点，无法解决 reasoning 流速率虚高的问题。
 //
-// v1.0.0（G8）：不再使用裸 `"text":` 字段名——Responses 上游的
+// 不再使用裸 `"text":` 字段名——Responses 上游的
 // reasoning_summary_text.done 事件（思考摘要完成帧）JSON 同样含 "text" 字段，
 // 会把 reasoning 阶段误判为 content 起点、first_content_ms 偏早；改用
 // `"text_delta"`（Anthropic 文本增量事件名）与 `"type":"text"`
@@ -539,8 +530,8 @@ func passthroughStream(w http.ResponseWriter, resp *http.Response, att *streamAt
 	started := false
 	sentBytes := int64(0)
 	lastSent := int64(-1)
-	failPreLen := -1 // v1.0.0（P6）：写失败时 data 的已送达前缀长度（clientBytes 截断用）
-	failWritten := 0 // v1.0.0（G6）：写失败块中实际送达的字节数（部分写入）
+	failPreLen := -1 // 写失败时 data 的已送达前缀长度（clientBytes 截断用）
+	failWritten := 0 // 写失败块中实际送达的字节数（部分写入）
 	chunk := make([]byte, 64*1024)
 	for {
 		n, rerr := resp.Body.Read(chunk)
@@ -551,7 +542,7 @@ func passthroughStream(w http.ResponseWriter, resp *http.Response, att *streamAt
 			}
 			lastChunk = now
 			readChunks++
-			preLen := len(data) // v1.0.0（P6）：本块 append 前的长度（写失败时据此截断未送达部分）
+			preLen := len(data) // 本块 append 前的长度（写失败时据此截断未送达部分）
 			if int64(len(data)) < maxUpstreamResponseBytes {
 				take := n
 				if remain := maxUpstreamResponseBytes - int64(len(data)); int64(take) > remain {
@@ -559,7 +550,7 @@ func passthroughStream(w http.ResponseWriter, resp *http.Response, att *streamAt
 				}
 				data = append(data, chunk[:take]...)
 			}
-			// v1.0.0（G7）：检测同时覆盖累积副本与当前块——副本达 64MB 封顶后 data 不再
+			// 检测同时覆盖累积副本与当前块——副本达 64MB 封顶后 data 不再
 			// 增长，仅扫 data 会漏检后续块中的 content 帧（first_content_ms 永远不出）；
 			// data 命中历史跨块场景（帧跨 Read 边界仍可检出），chunk[:n] 覆盖封顶后的当前块。
 			if firstContent < 0 && (streamChunkHasContent(data) || streamChunkHasContent(chunk[:n])) {
@@ -576,8 +567,8 @@ func passthroughStream(w http.ResponseWriter, resp *http.Response, att *streamAt
 			}
 			if wn, werr := w.Write(chunk[:n]); werr != nil {
 				att.err = "写入客户端失败: " + werr.Error()
-				failPreLen = preLen // v1.0.0（P6）：本块未送达，clientBytes 截断到上一块为止
-				failWritten = wn    // v1.0.0（G6）：失败块的部分写入字节
+				failPreLen = preLen // 本块未送达，clientBytes 截断到上一块为止
+				failWritten = wn    // 失败块的部分写入字节
 				sentBytes += int64(wn)
 				lastSent = now
 				att.sentBytes = sentBytes
@@ -617,10 +608,10 @@ func passthroughStream(w http.ResponseWriter, resp *http.Response, att *streamAt
 	}
 	att.result.ReadChunks = readChunks
 	att.result.Err = att.err
-	// v1.0.0（P6）：client_resp_body 只记已成功送达的字节（CallLog 语义：流式为已发送部分）。
-	// 旧实现失败场景把含未送达尾块的完整上游副本记入，client_resp_body 字节数 > sent_bytes
-	// 自相矛盾，排查“客户端断开时收到多少”时误导；跨格式路径本就只记成功写出块，此处对齐。
-	// v1.0.0（G6）：失败块的部分写入字节（w.Write 返回 wn）同样计入——sentBytes 已含该
+	// client_resp_body 只记已成功送达的字节（CallLog 语义：流式为已发送部分）。
+	// 失败场景下若把含未送达尾块的完整上游副本记入，client_resp_body 字节数 > sent_bytes
+	// 自相矛盾，排查"客户端断开时收到多少"时误导；跨格式路径本就只记成功写出块，此处对齐。
+	// 失败块的部分写入字节（w.Write 返回 wn）同样计入——sentBytes 已含该
 	// 部分而 clientBytes 截断到上一块会让两者口径矛盾（sent > client）；追加时先复制再拼，
 	// 不在 data 底层数组上原地 append（RespBody 仍需保留完整上游副本）。
 	if failPreLen >= 0 && failPreLen <= len(data) {
@@ -670,8 +661,8 @@ func convertStream(w http.ResponseWriter, resp *http.Response, att *streamAttemp
 		if werr != nil {
 			att.err = "写入客户端失败: " + werr.Error()
 			sentBytes += int64(wn)
-			// v1.0.0（G6）：失败块的部分写入字节同样计入 clientBytes，与 sentBytes
-			// 同口径（此前 sentBytes 含部分写入而 clientBytes 丢弃整块，两者矛盾）
+			// 失败块的部分写入字节同样计入 clientBytes，与 sentBytes
+			// 同口径（sentBytes 含部分写入而 clientBytes 丢弃整块会令两者矛盾）
 			clientBytes = append(clientBytes, out[:wn]...)
 			lastSent = time.Since(start).Milliseconds()
 			return false
@@ -732,23 +723,23 @@ func convertStream(w http.ResponseWriter, resp *http.Response, att *streamAttemp
 					writeOut(out)
 					break
 				}
-				// M5① 修复：上游返回 200 但响应体无法解析（如完整错误 JSON）——按失败处理（可重试），
-				// 不再落入 Finish() 伪造“成功”空流掩盖上游错误。此时必然尚未向客户端写出任何
+				// 上游返回 200 但响应体无法解析（如完整错误 JSON）——按失败处理（可重试），
+				// 不应落入 Finish() 伪造"成功"空流掩盖上游错误。此时必然尚未向客户端写出任何
 				// 字节（无 data: 帧 → 转换器从未产生输出），可安全换 Key/换供应商重试。
 				att.err = "上游返回了无法解析的 200 响应: " + truncate(string(data), 300)
 				break
 			}
-			// V-P2 修复（v1.0.0）：响应体含 data: 帧但全部无法解析出任何有效事件
-			//（如 data: <html> 错误页被当作 SSE 帧）——按失败处理（可重试），不再伪造成功空流。
+			// 响应体含 data: 帧但全部无法解析出任何有效事件
+			//（如 data: <html> 错误页被当作 SSE 帧）——按失败处理（可重试），不应伪造成功空流。
 			// 无任何事件 ⇒ 转换器从未产生输出 ⇒ 必然尚未向客户端写出任何字节
-			//（与 M5① 同口径，扩展到「有 data: 前缀但载荷全坏」场景）。
+			//（与上方口径一致，扩展到「有 data: 前缀但载荷全坏」场景）。
 			if !started && !conv.HasAnyEvent() {
 				att.err = "上游返回了无法解析的 200 响应: " + truncate(string(data), 300)
 				break
 			}
 			// 上游流正常结束：输出收尾帧（含 usage；幂等）。
-			// v1.0.0（C6）：残余帧中的错误事件上抛——上游在流末尾发出错误事件且该帧
-			// 恰无尾随空行（EOF 截断常见）时，旧实现静默丢弃错误并伪造成功收尾流。
+			// 残余帧中的错误事件上抛——上游在流末尾发出错误事件且该帧
+			// 恰无尾随空行（EOF 截断常见）时，不应静默丢弃错误并伪造成功收尾流。
 			// started 语义与 FeedChunk 错误路径一致：已开始转发则断流记失败日志，
 			// 未开始（att.started=false）则可安全重试。
 			if fout, ferr := conv.Finish(); ferr != nil {
@@ -769,6 +760,9 @@ func convertStream(w http.ResponseWriter, resp *http.Response, att *streamAttemp
 			att.err = "读取上游响应失败: " + rerr.Error()
 			break
 		}
+	}
+	if n := conv.DroppedBytes(); n > 0 {
+		fmt.Printf("[proxy] 上游流帧缓冲溢出（16MB 上限），丢弃 %d 字节，部分事件不可恢复\n", n)
 	}
 	att.result.RespBody = data
 	att.result.DurationMs = time.Since(start).Milliseconds()
@@ -807,7 +801,7 @@ func fallbackFullBodySSE(pType, clientFormat string, body []byte) ([]byte, bool)
 // extractStreamUsage 从上游响应体提取 usage（流式路径）。
 // 先按 SSE 模式提取；全 0 时回退按整体 JSON 提取——覆盖伪流式兜底场景
 // （上游对 stream=true 一次性返回完整 JSON，此时响应体不是 SSE 帧序列，
-// 旧实现固定按 SSE 模式提取导致该路径 token 全记 0，M5② 修复）。
+// 若固定按 SSE 模式提取该路径 token 全记 0）。
 // 真 SSE 流无 usage 时两种模式均返回 0，回退无害。
 func extractStreamUsage(data []byte) (int64, int64, int64) {
 	p, c, t := convert.ExtractUsage(data, true)
@@ -860,13 +854,13 @@ func (h *Handler) handleProxy(w http.ResponseWriter, r *http.Request, clientForm
 		return
 	}
 
-	// [2] 模型解析（纯读；候选供应商各自携带命中的真实模型名，M1 修复）
+	// [2] 模型解析（纯读；候选供应商各自携带命中的真实模型名）
 	res := h.State.ResolveModel(ir.Model)
 
 	// 请求头快照 + 日志上下文（贯穿各写日志函数；四组数据的客户端请求侧）。
-	// v1.0.0（P4）：提前到白名单校验之前构建——403 越权拒绝与 404 模型未匹配
+	// 提前到白名单校验之前构建——403 越权拒绝与 404 模型未匹配
 	// 同为需审计的安全相关拒绝事件，配置模型白名单的部署中 Key 被滥用探测时
-	// 可在调用日志页发现，旧实现完全无痕。
+	// 可在调用日志页发现，否则完全无痕。
 	reqHeaders := map[string]string{}
 	for k, v := range r.Header {
 		reqHeaders[k] = strings.Join(v, ", ")
@@ -877,7 +871,7 @@ func (h *Handler) handleProxy(w http.ResponseWriter, r *http.Request, clientForm
 		reqHeadersJSON: reqHeadersJSON, rawBody: rawBody,
 	}
 
-	// [2.5] 模型白名单校验（v1.0.0 M2 + v1.0.0 V-M4 口径）：原始名命中放行全部候选；
+	// [2.5] 模型白名单校验：原始名命中放行全部候选；
 	// 否则仅保留自身命中的真实模型名在白名单内的候选（多供应商共享别名时不再整单误拒，
 	// 且路由只在白名单允许的候选中选择）；过滤后为空 → 403。
 	if len(pk.Models) > 0 {
@@ -885,7 +879,7 @@ func (h *Handler) handleProxy(w http.ResponseWriter, r *http.Request, clientForm
 		if len(filtered) == 0 {
 			body := convert.WriteError(w, clientFormat, http.StatusForbidden, "access_denied", "model_not_allowed",
 				"model not allowed for this api key")
-			// v1.0.0（P4）：越权调用记录失败日志（与 404 模型未匹配同口径）
+			// 越权调用记录失败日志（与 404 模型未匹配同口径）
 			logCtx.realModel = ""
 			h.writeFailureLog(logCtx, nil, nil, nil,
 				&clientRespInfo{status: http.StatusForbidden, headers: serializeHeaders(w.Header()), body: body},
@@ -912,8 +906,8 @@ func (h *Handler) handleProxy(w http.ResponseWriter, r *http.Request, clientForm
 	if timeout <= 0 {
 		timeout = 300
 	}
-	// M3 修复：上游 ctx 脱离 r.Context()（与流式路径同口径）——客户端断开时上游请求
-	// 不被连带取消，避免烧光全部重试槽位并把「客户端断开」误记为「全部供应商失败」；
+	// 上游 ctx 脱离 r.Context()（与流式路径同口径）——客户端断开时上游请求
+	// 不被连带取消，避免烧光全部重试槽位并把"客户端断开"误记为"全部供应商失败"；
 	// 断开检测改由成功后检查 r.Context() 归类（见 [8]）。
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -945,7 +939,7 @@ outer:
 			break
 		}
 		p := cand.Provider
-		realModel := cand.Model // 该供应商自身命中的真实模型名（M1：别名在不同供应商可指向不同真实名）
+		realModel := cand.Model // 该供应商自身命中的真实模型名（别名在不同供应商可指向不同真实名）
 		pType := convert.NormalizeAPIType(p.APIType)
 		sameFmt := pType == clientFormat
 		// 构建上游请求体
@@ -962,14 +956,13 @@ outer:
 				errMsg := "构建上游请求失败: " + berr.Error()
 				attempts = append(attempts, logsdb.AttemptLog{Provider: p.Name, ErrorMsg: errMsg})
 				lastErrMsg = errMsg
-				// L19：补记上游信息（无真实上游请求，构造最小快照供 503 日志使用）
+				// 补记上游信息（无真实上游请求，构造最小快照供 503 日志使用）
 				lastResult = &upstreamResult{Err: errMsg}
 				lastCand = cand
 				tried[p.ID] = true
-				// v1.0.0（C1）→ v1.0.0 行为修正：构建失败与 Key 无关（同供应商换 Key 重建同样
-				// 失败），不烧 Key 重试槽位。旧实现的 break 位于供应商循环体内、Key 循环之外，
-				// 实际跳出的是供应商循环（直接 503，其他可用供应商不再尝试），与注释宣称的
-				// “进入下一家供应商”不符；改 continue 跳过该供应商进入下一家。
+				// 构建失败与 Key 无关（同供应商换 Key 重建同样
+				// 失败），不应烧 Key 重试槽位。该处应 continue 跳过该供应商进入下一家，
+				// 而非 break 直接结束供应商循环（其他可用供应商不再尝试）。
 				continue
 			}
 			upBody = b
@@ -981,7 +974,7 @@ outer:
 		if maxAttempts > 3 {
 			maxAttempts = 3
 		}
-		attempted := 0 // 本轮实际发起的上游调用次数（v1.0.0 M3：Key>3 供应商冷却入池判定用）
+		attempted := 0 // 本轮实际发起的上游调用次数（Key>3 供应商冷却入池判定用）
 		for i := 0; i < maxAttempts; i++ {
 			k := keyOrder[i]
 			attempted++
@@ -1004,8 +997,8 @@ outer:
 					lastCand = cand
 					lastErrMsg = att.err
 					if att.clientCanceled {
-						// V-N1 修复（v1.0.0）：客户端已断开，重试换 Key/换供应商无人接收响应、
-						// 只会白烧上游配额——与非流式路径（M3）同口径按失败收尾，记「客户端断开」。
+						// 客户端已断开，重试换 Key/换供应商无人接收响应、
+						// 只会白烧上游配额——按失败收尾，记「客户端断开」。
 						logCtx.realModel = realModel
 						h.writeFailureLog(logCtx, attempts, p, att.result, attClientResp(att), "客户端断开", att)
 						return
@@ -1029,7 +1022,7 @@ outer:
 				// 成功：数据已实时发给客户端，重置失败计数并写成功日志后返回
 				attempts = append(attempts, logsdb.AttemptLog{Provider: p.Name, APIKeyID: k.ID})
 				h.State.Cooldown.RecordSuccess(p.ID, realModel)
-				usageP, usageC, usageT := extractStreamUsage(att.result.RespBody) // M5②：伪流式兜底时回退 JSON 提取
+				usageP, usageC, usageT := extractStreamUsage(att.result.RespBody) // 伪流式兜底时回退 JSON 提取
 				logCtx.realModel = realModel
 				h.writeSuccessLog(logCtx, attempts, p, att.result, attClientResp(att), usageP, usageC, usageT, true, att)
 				return
@@ -1071,10 +1064,10 @@ outer:
 			lastCand = cand
 			lastErrMsg = errMsg
 			if r.Context().Err() != nil {
-				// v1.0.0（M2）：客户端已断开——M3 后上游 ctx 脱离 r.Context()，断开不再
+				// 客户端已断开——上游 ctx 脱离 r.Context() 后断开不再
 				// 中止重试循环；继续换 Key/换供应商无人接收响应、只会白烧上游配额
 				//（最坏 3 Key × N 供应商 × 每次最长超时秒数的上游请求）。
-				// 与流式 v1.0.0（V-N1）、非流式成功后归类（v1.0.0 M3）同口径终止并记「客户端断开」，
+				// 与流式客户端断开、非流式成功后归类同口径终止并记"客户端断开"，
 				// 上游失败详情保留在 attempt 记录中可审计。
 				logCtx.realModel = realModel
 				h.writeFailureLog(logCtx, attempts, p, lastResult, nil, "客户端断开", nil)
@@ -1089,11 +1082,10 @@ outer:
 				return
 			}
 		}
-		// v1.0.0（M3）：Key 数 >3 的供应商此前 allKeysTried 恒 false（maxAttempts=3 <
-		// len(keyOrder)），RecordFailure 永不执行——熔断对多 Key 供应商静默失效。
-		// 改为「按上限实际尝试且全部失败」即计一轮失败：3 次浅尝全败与试完全部 Key
-		// 全败同为该供应商该模型的失败信号（RecordFailure 内部仍有连续轮数阈值把关）。
-		// 注意：构建失败（C1）continue 时不经过此处，不再计失败轮——构建失败属
+		// Key 数 >3 的供应商应按"按上限实际尝试且全部失败"即计一轮失败——
+		// 3 次浅尝全败与试完全部 Key 全败同为该供应商该模型的失败信号
+		//（RecordFailure 内部仍有连续轮数阈值把关）。
+		// 注意：构建失败 continue 时不经过此处，不再计失败轮——构建失败属
 		// 跨格式转换层问题、与供应商 Key 健康无关，计入冷却反而让用户困惑。
 		if attempted > 0 && attempted == maxAttempts && snap.CooldownEnabled {
 			// 冷却池已启用：累计一轮“全部 Key 失败”；连续达到重试次数阈值后才入池
@@ -1115,8 +1107,8 @@ outer:
 			// 有候选但一次上游请求都未发出（如选中供应商无可用 Key）
 			msg += " (no provider attempted)"
 		}
-		// 日志与返回给客户端的消息保持一致（修复：旧实现日志另行构造消息，
-		// cooling down 场景日志误记为 all providers failed (no provider attempted)）
+		// 日志与返回给客户端的消息保持一致——cooling down 场景下不应误记为
+		// "all providers failed (no provider attempted)"。
 		clientResp := writeClientError(w, clientFormat, http.StatusServiceUnavailable, "service_unavailable", "service_unavailable", msg)
 		if lastCand != nil {
 			logCtx.realModel = lastCand.Model
@@ -1129,8 +1121,8 @@ outer:
 	// 成功即重置该供应商该模型的连续失败计数（冷却池重试阈值语义）
 	h.State.Cooldown.RecordSuccess(successCand.Provider.ID, successCand.Model)
 	logCtx.realModel = successCand.Model
-	// M3 修复：客户端已断开时（r.Context() 已取消），上游响应虽完整但未送达——
-	// 与流式路径同口径记 failure「客户端断开」，不再把断开误归类为上游失败烧重试槽位
+	// 客户端已断开时（r.Context() 已取消），上游响应虽完整但未送达——
+	// 与流式路径同口径记 failure"客户端断开"，不应把断开误归类为上游失败烧重试槽位
 	if r.Context().Err() != nil {
 		h.writeFailureLog(logCtx, attempts, successCand.Provider, successResult, nil, "客户端断开", nil)
 		return
@@ -1185,7 +1177,7 @@ func retryCountFrom(attempts []logsdb.AttemptLog) int {
 
 // generationMs 计算生成耗时（token 速率的分母）。
 //
-// 口径（v1.0.0）：
+// 口径：
 //   - 流式：从上游（模型供应商）首个响应字节到达起算，到末字节结束——
 //     即"模型实际吐字窗口"，不含代理排队/上游排队/网络往返；
 //   - 非流式：整个上游请求的耗时（请求发出 → 响应体读完毕）；
@@ -1240,7 +1232,7 @@ func writeClientError(w http.ResponseWriter, clientFormat string, status int, er
 	return &clientRespInfo{status: status, headers: serializeHeaders(w.Header()), body: body}
 }
 
-// logEnabled 日志记录开关是否开启（v1.0.0）：关闭时代理不写任何调用日志。
+// logEnabled 日志记录开关是否开启：关闭时代理不写任何调用日志。
 // 每次写日志前从快照实时读取，支持热加载（设置页保存 / 手改 config.yml 后立即生效）。
 func (h *Handler) logEnabled() bool { return h.State.Snap().LogEnabled }
 
@@ -1343,7 +1335,7 @@ func (h *Handler) buildLog(ctx *logContext, attempts []logsdb.AttemptLog, p *con
 		RequestedModel: ctx.requestedModel,
 		ActualModel:    ctx.realModel,
 		ReqMethod:      http.MethodPost,
-		ReqBody:        truncate(string(ctx.rawBody), 1<<20), // v1.0.0：与其他三组同口径 1MB 入库截断（需求 4.3；v1.0.0 D7：原裸编号 M4 与后续批次撞号，文档该条属「其他」类无编号）
+		ReqBody:        truncate(string(ctx.rawBody), 1<<20), // 与其他三组同口径 1MB 入库截断（需求 4.3）
 		ClientReqURL:   ctx.clientReqURL,
 	}
 	if len(ctx.reqHeadersJSON) > 0 {
@@ -1392,12 +1384,21 @@ func (h *Handler) buildLog(ctx *logContext, attempts []logsdb.AttemptLog, p *con
 // ===== 工具 =====
 
 func shuffledKeys(p *config.Provider) []config.ProviderAPIKey {
-	n := len(p.APIKeys)
+	// 先收集启用的 Key——停用 Key 在路由阶段已被候选过滤，理论上不会到这里，
+	// 但 shuffledKeys 也兜底过滤：防御性，避免某供应商部分 Key 停用时随机到 disabled
+	// Key 浪费上游配额。返回 nil 时调用方应将整供应商视为无可用 Key（同 0 Key 处理）。
+	enabled := make([]config.ProviderAPIKey, 0, len(p.APIKeys))
+	for _, k := range p.APIKeys {
+		if k.Enabled {
+			enabled = append(enabled, k)
+		}
+	}
+	n := len(enabled)
 	if n == 0 {
 		return nil
 	}
 	out := make([]config.ProviderAPIKey, n)
-	copy(out, p.APIKeys)
+	copy(out, enabled)
 	// Fisher-Yates 洗牌
 	for i := n - 1; i > 0; i-- {
 		j := randIntn(i + 1)
@@ -1418,7 +1419,7 @@ func randIntn(n int) int {
 }
 
 // truncate 按字节上限截断字符串，附加 "...(truncated)" 标记（前端依赖该标记识别截断）。
-// v1.0.0（C5）：截断点回退到最近的 UTF-8 字符边界，避免把中文等多字节字符截半产生乱码。
+// 截断点回退到最近的 UTF-8 字符边界，避免把中文等多字节字符截半产生乱码。
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -15,8 +15,8 @@ import (
 
 // TestUpstream400NoRetry 验证上游返回 400 时不重试并归一化 502（需求 6.4 / 6.6），
 // 流式与非流式路径行为一致。
-// 回归背景：流式路径曾因 shouldRetry 先判 errStr 后判状态码，导致 400 被当作
-// 可重试错误——换满全部 Key 重试并最终返回 503，违反「400 不重试、返回 502」。
+// 设计意图：shouldRetry 必须先判状态码再判错误串——若先判错误串，
+// 流式路径下 400 会被当作可重试错误、换满全部 Key 后返回 503，违反"400 不重试、返回 502"。
 func TestUpstream400NoRetry(t *testing.T) {
 	var calls int64
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,12 +45,12 @@ func TestUpstream400NoRetry(t *testing.T) {
 			Enabled: true, Weight: 1,
 			// 3 条 Key：若误重试，上游请求次数会大于 1
 			APIKeys: []config.ProviderAPIKey{
-				{ID: "k1", Key: "sk-a"}, {ID: "k2", Key: "sk-b"}, {ID: "k3", Key: "sk-c"},
+				{ID: "k1", Key: "sk-a", Enabled: true}, {ID: "k2", Key: "sk-b", Enabled: true}, {ID: "k3", Key: "sk-c", Enabled: true},
 			},
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,14 +105,14 @@ func TestUpstream500RetriesAllKeys(t *testing.T) {
 			ID: "p1", Name: "p-500", BaseURL: up.URL + "/v1", APIType: convert.FormatOpenAI,
 			Enabled: true, Weight: 1,
 			APIKeys: []config.ProviderAPIKey{
-				{ID: "k1", Key: "sk-a"}, {ID: "k2", Key: "sk-b"}, {ID: "k3", Key: "sk-c"},
+				{ID: "k1", Key: "sk-a", Enabled: true}, {ID: "k2", Key: "sk-b", Enabled: true}, {ID: "k3", Key: "sk-c", Enabled: true},
 			},
 			Models: []config.ProviderModel{{Name: "m-openai"}},
 		}}
 		ns.APIKeys = []*config.ProxyKey{{ID: "pk1", Name: "e2e", Key: "sk-proxy-e2e-key", Enabled: true, IPWhitelist: []string{"*"}}}
 		// 本用例专注重试语义：禁用冷却池，避免非流式子用例的失败入池后拦截流式子用例
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)

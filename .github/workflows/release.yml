@@ -2,7 +2,7 @@
 #  GitHub Actions: Release
 #
 #  Trigger:
-#    - push tag matching v*  (e.g. v1.0.0) -> build + publish GitHub Release
+#    - push tag matching v*  -> build + publish GitHub Release
 #    - workflow_dispatch        -> build only (dry-run / re-build)
 #
 #  Pipeline:
@@ -19,7 +19,7 @@ name: Release
 on:
   push:
     tags:
-      - '*'       # 任何 tag 都触发(覆盖 v1.0.0 与 1.0.0 两种命名)
+      - '*'       # 任何 v* 形式的 tag 都触发发布
   workflow_dispatch:
 
 # 默认 GOPROXY 指向国内镜像,避免 CI 默认 proxy.golang.org 在国内拉取

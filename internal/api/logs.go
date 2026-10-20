@@ -13,7 +13,7 @@ import (
 
 // isClosedDBErr 判定错误是否为「日志库已被关闭」：清空重建 / 路径切换 / 热加载切换
 // 关闭旧库后的窗口内，持有旧引用的查询会收到 sql: database is closed 类错误。
-// v1.0.0（G1）：作为读接口「重取引用重试一次」兑底的触发依据。
+// 作为读接口「重取引用重试一次」兑底的触发依据。
 func isClosedDBErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "database is closed")
 }
@@ -22,7 +22,7 @@ func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
-	// v1.0.0（L1）：无法解析的时间参数返回 400——旧实现原样透传进 SQL 字符串比较，
+	// 无法解析的时间参数返回 400——原样透传进 SQL 字符串比较，
 	// start_time 非法会恒假过滤掉全部日志（用户误以为没日志）、end_time 非法恒真等于没过滤。
 	startTime, okS := normalizeTimeParam(q.Get("start_time"), false)
 	if !okS {
@@ -45,9 +45,8 @@ func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
 		StartTime: startTime,
 		EndTime:   endTime,
 	}
-	// v1.0.0（A5）→ v1.0.0（G1）补全：store 引用改在 logOpMu 读锁内获取——旧实现在锁外
-	// 获取，清空重建窗口内阻塞在 RLock 的查询线程醒来后用的仍是已关旧库（实测单次清空
-	// 即可引爆一波 500，A5 注释宣称的「阻塞等待重建完成后用新 store 正常返回」从未成立）。
+	// store 引用在 logOpMu 读锁内获取；若在锁外获取，清空重建窗口内阻塞在
+	// RLock 的查询线程醒来后拿到的仍是已关旧库，会直接返回 500。
 	s.logOpMu.RLock()
 	store := s.LogStore()
 	if store == nil {
@@ -57,9 +56,9 @@ func (s *Server) handleLogsList(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := store.Query(query)
 	s.logOpMu.RUnlock()
-	// v1.0.0（G1）：closed 错误重取引用重试一次（判定 st != store：引用未变则不
-	// 重试，避免无意义重复查询）。三条切换路径自 v1.0.0（G2 补全）起全部持
-	// logOpMu（设置页 / 清空 / 热加载 SwitchLogPathLocked），此处重试为防御性兜底。
+	// 遇 closed 错误时重取引用重试一次（判定 st != store：引用未变则不
+	// 重试，避免无意义重复查询）。三条切换路径（设置页 / 清空 / 热加载
+	// SwitchLogPathLocked）全部持 logOpMu，此处重试为防御性兜底。
 	if err != nil && isClosedDBErr(err) {
 		s.logOpMu.RLock()
 		if st := s.LogStore(); st != nil && st != store {
@@ -87,7 +86,7 @@ func maskLogAPIKeys(logs []*logsdb.CallLog) {
 
 func (s *Server) handleLogDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// v1.0.0（G1）：store 引用锁内获取（A5 补全，同 handleLogsList）+ closed 重试
+	// store 引用在锁内获取（同 handleLogsList）+ closed 重试
 	s.logOpMu.RLock()
 	store := s.LogStore()
 	if store == nil {
@@ -132,7 +131,7 @@ func (s *Server) handleLogDetail(w http.ResponseWriter, r *http.Request) {
 // handleLogDelete 删除单条日志。
 func (s *Server) handleLogDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// v1.0.0（G1）：store 引用锁内获取（A5 补全）+ closed 重试。DELETE 幂等：旧库被关时
+	// store 引用在锁内获取 + closed 重试。DELETE 幂等：旧库被关时
 	// 本次删除必然未生效，重试对新库执行一次，不存在重复删除。
 	s.logOpMu.RLock()
 	store := s.LogStore()
@@ -161,7 +160,7 @@ func (s *Server) handleLogDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "deleted": n})
 }
 
-// handleLogsClear 清空全部日志（v1.0.0：删除数据库文件并重建，即时释放磁盘空间）。
+// handleLogsClear 清空全部日志（删除数据库文件并重建，即时释放磁盘空间）。
 // 行数统计在重建前完成；OnLogRecreate 回调（main 注入）负责关库、删除库文件与
 // -wal/-shm 伴生文件、原路径重建空库并替换引用；无回调（测试环境）降级为 SQL 删除。
 // logOpMu 互斥：防止并发清空（双击/多管理员）交错重建互相删掉对方的新库。
@@ -169,7 +168,7 @@ func (s *Server) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 	s.logOpMu.Lock()
 	defer s.logOpMu.Unlock()
 	if s.OnLogRecreate != nil {
-		// v1.0.0（M2）：store 改为锁内捕获——旧实现在锁外捕获，并发双清空时后进锁的请求
+		// store 改为锁内捕获——在锁外捕获，并发双清空时后进锁的请求
 		// 拿到已被重建关闭的旧 store：Count() 报 database is closed 被吞、响应 deleted:0；
 		// 锁内捕获保证拿到重建后的新 store（main 的 onSwap 已同步替换引用）。
 		store := s.LogStore()
@@ -203,9 +202,9 @@ func (s *Server) handleLogsClear(w http.ResponseWriter, r *http.Request) {
 // normalizeTimeParam 时间参数归一化为本地时区 RFC3339（兼容 Z 结尾与空格分隔）。
 // 输出统一转为本地时区：日志 timestamp 按本地 RFC3339 存储，SQL 为字符串比较，
 // 若保留 UTC（Z 后缀）表示，字典序与时间序不一致会导致时间范围筛选错乱。
-// isEnd：作为结束时间时，纯日期输入补全为当天 23:59:59（v1.0.0 L7 修复——旧实现统一补 00:00:00，
+// isEnd：作为结束时间时，纯日期输入补全为当天 23:59:59（——统一补 00:00:00，
 // 直接调 API 传纯日期 end_time 会漏掉当天全部日志；与 expires_at 的补全口径对齐）。
-// v1.0.0（L1）：返回值增加 ok——所有 layout 均不匹配时返回 false，调用方据此 400 拒绝，
+// 返回值增加 ok——所有 layout 均不匹配时返回 false，调用方据此 400 拒绝，
 // 不再原样透传进 SQL 字符串比较（非法 start_time 恒假过滤全部、非法 end_time 恒真等于没过滤）。
 func normalizeTimeParam(s string, isEnd bool) (string, bool) {
 	if s == "" {

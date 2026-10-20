@@ -1,4 +1,4 @@
-﻿package proxy
+package proxy
 
 import (
 	"context"
@@ -19,11 +19,11 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// v1.0.0 修复回归测试：M2（模型白名单别名归一）/ M3（非流式客户端断开）/
-// M5①（跨格式流式 200+无法解析响应体按失败处理）。
+// 回归测试：模型白名单别名归一 / 非流式客户端断开 /
+// 跨格式流式 200+无法解析响应体按失败处理。
 
-// newFixStack 搭建代理栈（openai 类型上游；keys 数量与代理 Key 可用模型可配置）。
-func newFixStack(t *testing.T, upstreamURL string, keys int, allowedModels []string) (*Handler, *logsdb.LogStore, func()) {
+// newSingleProviderStack 搭建代理栈（openai 类型上游；keys 数量与代理 Key 可用模型可配置）。
+func newSingleProviderStack(t *testing.T, upstreamURL string, keys int, allowedModels []string) (*Handler, *logsdb.LogStore, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	store, err := logsdb.Open(filepath.Join(dir, "test-log.db"))
@@ -37,7 +37,7 @@ func newFixStack(t *testing.T, upstreamURL string, keys int, allowedModels []str
 	state := core.NewState(mgr)
 	aks := []config.ProviderAPIKey{}
 	for i := 0; i < keys; i++ {
-		aks = append(aks, config.ProviderAPIKey{ID: fmt.Sprintf("k%d", i+1), Key: fmt.Sprintf("sk-fix-%d", i+1)})
+		aks = append(aks, config.ProviderAPIKey{ID: fmt.Sprintf("k%d", i+1), Key: fmt.Sprintf("sk-fix-%d", i+1), Enabled: true})
 	}
 	err = state.Mutate(func(ns *core.Snapshot) {
 		ns.Providers = []*config.Provider{{
@@ -50,7 +50,7 @@ func newFixStack(t *testing.T, upstreamURL string, keys int, allowedModels []str
 			IPWhitelist: []string{"*"}, Models: allowedModels,
 		}}
 		ns.CooldownEnabled = false
-		ns.LogEnabled = true // 测试栈显式开启日志（v1.0.0 起默认关闭）
+		ns.LogEnabled = true // 测试栈显式开启日志
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -61,8 +61,8 @@ func newFixStack(t *testing.T, upstreamURL string, keys int, allowedModels []str
 	return h, store, cleanup
 }
 
-// fixCall 向代理发起一次调用，返回状态码与响应体。
-func fixCall(t *testing.T, ts *httptest.Server, path, body string) (int, string) {
+// proxyCall 向代理发起一次调用，返回状态码与响应体。
+func proxyCall(t *testing.T, ts *httptest.Server, path, body string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, ts.URL+path, strings.NewReader(body))
 	if err != nil {
@@ -79,37 +79,37 @@ func fixCall(t *testing.T, ts *httptest.Server, path, body string) (int, string)
 	return resp.StatusCode, string(b)
 }
 
-const fixCCBody = `{"model":%s,"messages":[{"role":"user","content":"hi"}]}`
+const ccReqBody = `{"model":%s,"messages":[{"role":"user","content":"hi"}]}`
 
-// TestModelWhitelistAliasAllowed M2 回归：代理 Key 可用模型配置真实名时，
-// 客户端用该模型的合法别名调用应放行（旧实现按原始串字面匹配，别名被误 403）。
+// TestModelWhitelistAliasAllowed 代理 Key 可用模型配置真实名时，
+// 客户端用该模型的合法别名调用应放行（白名单应按解析后真实名归一匹配，别名不应被误 403）。
 func TestModelWhitelistAliasAllowed(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 	}))
 	defer up.Close()
-	h, store, cleanup := newFixStack(t, up.URL, 1, []string{"m-openai"})
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, []string{"m-openai"})
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
 	// 真实名：放行
-	if code, body := fixCall(t, ts, "/v1/chat/completions", fmt.Sprintf(fixCCBody, `"m-openai"`)); code != 200 {
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", fmt.Sprintf(ccReqBody, `"m-openai"`)); code != 200 {
 		t.Fatalf("真实名应 200，实际 %d: %s", code, body)
 	}
-	// 别名（解析后真实名命中白名单）：也应放行（M2 修复点）
-	if code, body := fixCall(t, ts, "/v1/chat/completions", fmt.Sprintf(fixCCBody, `"m-alias"`)); code != 200 {
+	// 别名（解析后真实名命中白名单）：也应放行（白名单应按解析后真实名归一匹配）
+	if code, body := proxyCall(t, ts, "/v1/chat/completions", fmt.Sprintf(ccReqBody, `"m-alias"`)); code != 200 {
 		t.Fatalf("合法别名应放行（白名单按解析后真实名归一匹配），实际 %d: %s", code, body)
 	}
 	// 其他模型：仍应 403
-	if code, _ := fixCall(t, ts, "/v1/chat/completions", fmt.Sprintf(fixCCBody, `"other"`)); code != 403 {
+	if code, _ := proxyCall(t, ts, "/v1/chat/completions", fmt.Sprintf(ccReqBody, `"other"`)); code != 403 {
 		t.Fatalf("白名单外模型应 403，实际 %d", code)
 	}
 	_ = store
 }
 
-// TestNonStreamClientDisconnectClassification M3 回归：非流式请求客户端主动断开后，
+// TestNonStreamClientDisconnectClassification 非流式请求客户端主动断开后，
 // 代理不应把客户端断开误判为上游失败而烧光全部 Key 重试槽位，也不应把日志记成
 // 「all providers failed: ... context canceled」——应与流式路径同口径记「客户端断开」。
 func TestNonStreamClientDisconnectClassification(t *testing.T) {
@@ -121,15 +121,15 @@ func TestNonStreamClientDisconnectClassification(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 	}))
 	defer up.Close()
-	// 3 条 Key：旧实现会全部烧掉
-	h, store, cleanup := newFixStack(t, up.URL, 3, nil)
+	// 3 条 Key：若未做客户端断开短路，会全部烧光
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 3, nil)
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, ts.URL+"/v1/chat/completions",
-		strings.NewReader(fmt.Sprintf(fixCCBody, `"m-openai"`)))
+		strings.NewReader(fmt.Sprintf(ccReqBody, `"m-openai"`)))
 	req.Header.Set("Authorization", "Bearer sk-proxy-e2e-key")
 	go func() {
 		resp, err := (&http.Client{}).Do(req)
@@ -153,7 +153,7 @@ func TestNonStreamClientDisconnectClassification(t *testing.T) {
 		t.Fatalf("客户端断开应记 failure，实际 %s", l.Status)
 	}
 	if l.ErrorMsg == nil || !strings.Contains(*l.ErrorMsg, "客户端断开") {
-		t.Fatalf("错误应归类为「客户端断开」（旧实现误记 all providers failed: context canceled），实际 %v", l.ErrorMsg)
+		t.Fatalf("错误应归类为「客户端断开」（误记 all providers failed: context canceled），实际 %v", l.ErrorMsg)
 	}
 	if l.RetryCount != 0 {
 		t.Fatalf("客户端断开不应烧重试槽位（retry_count 应 0），实际 %d", l.RetryCount)
@@ -163,7 +163,7 @@ func TestNonStreamClientDisconnectClassification(t *testing.T) {
 	}
 }
 
-// TestCrossFmtStreamUnparsable200 M5① 回归：跨格式流式时上游返回 200 + 完整错误 JSON
+// TestCrossFmtStreamUnparsable200 跨格式流式时上游返回 200 + 完整错误 JSON
 // （非 SSE），代理应按失败处理并重试，穷尽后归一化 503——不得向客户端伪造
 // 「成功」的空事件流并记 success。
 func TestCrossFmtStreamUnparsable200(t *testing.T) {
@@ -175,15 +175,15 @@ func TestCrossFmtStreamUnparsable200(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient quota","type":"insufficient_quota","code":"insufficient_quota"}}`))
 	}))
 	defer up.Close()
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil)
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil)
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
 
-	code, body := fixCall(t, ts, "/v1/responses",
+	code, body := proxyCall(t, ts, "/v1/responses",
 		`{"model":"m-openai","input":"hi","stream":true}`)
 	if code != http.StatusServiceUnavailable {
-		t.Fatalf("穷尽重试后应 503（旧实现伪造成功空流），实际 %d: %s", code, body)
+		t.Fatalf("穷尽重试后应 503（伪造成功空流），实际 %d: %s", code, body)
 	}
 	if strings.Contains(body, "response.completed") || strings.Contains(body, "\"output_text\"") {
 		t.Fatalf("不应向客户端输出伪造的成功终止流: %s", body)
@@ -197,14 +197,14 @@ func TestCrossFmtStreamUnparsable200(t *testing.T) {
 	}
 	l := page.Logs[0]
 	if l.Status != "failure" {
-		t.Fatalf("应记 failure（旧实现记 success），实际 %s", l.Status)
+		t.Fatalf("应记 failure（记 success），实际 %s", l.Status)
 	}
 	if l.ErrorMsg == nil || !strings.Contains(*l.ErrorMsg, "无法解析的 200") {
 		t.Fatalf("错误信息应说明 200 响应无法解析，实际 %v", l.ErrorMsg)
 	}
 }
 
-// TestReqBodyTruncatedInLog M4 回归：超长客户端请求体入库时应按 1MB 截断
+// TestReqBodyTruncatedInLog 超长客户端请求体入库时应按 1MB 截断
 // （与其他三组数据同口径，需求 4.3）。
 func TestReqBodyTruncatedInLog(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +212,7 @@ func TestReqBodyTruncatedInLog(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
 	}))
 	defer up.Close()
-	h, store, cleanup := newFixStack(t, up.URL, 1, nil)
+	h, store, cleanup := newSingleProviderStack(t, up.URL, 1, nil)
 	defer cleanup()
 	ts := httptest.NewServer(http.HandlerFunc(h.ServeV1))
 	defer ts.Close()
@@ -220,7 +220,7 @@ func TestReqBodyTruncatedInLog(t *testing.T) {
 	// 构造 1.1MB 的请求体（长用户消息）
 	big := strings.Repeat("A", 1100*1024)
 	body := fmt.Sprintf(`{"model":"m-openai","messages":[{"role":"user","content":%s}]}`, mustJSON(big))
-	if _, respBody := fixCall(t, ts, "/v1/chat/completions", body); len(respBody) == 0 {
+	if _, respBody := proxyCall(t, ts, "/v1/chat/completions", body); len(respBody) == 0 {
 		t.Fatal("请求应成功")
 	}
 	page := waitForLog(t, store)

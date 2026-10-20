@@ -139,6 +139,6 @@ echo     - ./build.sh all on Linux/macOS, or
 echo     - GitHub Actions (auto-released on v* tag push)
 echo.
 echo Optional environment variables:
-echo   set VERSION=1.2.3 ^&^& build.bat         inject version (default: buildVersion in source)
+echo   set VERSION=1.0.0 ^&^& build.bat         inject version (default: buildVersion in source)
 echo   set GOPROXY=... ^&^& build.bat           override default proxy
 exit /b 0

@@ -12,7 +12,7 @@ import (
 	"llmproxy/internal/logsdb"
 )
 
-// 本文件验证「终止帧已送达后客户端断开」的正确归类（v1.0.0）：
+// 本文件验证「终止帧已送达后客户端断开」的正确归类：
 // SSE 客户端（如 Codex）读完终止事件（response.completed / [DONE] / message_stop）
 // 后即认为响应结束并关闭连接，属正常完成。此时代理若还在等上游剩余字节
 // （[DONE] 后的 keep-alive 等），随后的读错误不应记为"客户端断开"失败，
@@ -25,7 +25,7 @@ import (
 // usage → [DONE]），随后保持连接打开（挂住不发 EOF），模拟 [DONE] 后
 // keep-alive 挂住——转发循环只能因客户端断开（watchdog 关闭上游连接）而结束。
 //
-// 帧间固定 20ms 间隔（L15 修复）：真实流式上游逐帧到达；无间隔时高负载机器上
+// 帧间固定 20ms 间隔：真实流式上游逐帧到达；无间隔时高负载机器上
 // 整个链路亚毫秒完成，duration_ms/generation_ms 毫秒级计时归零，
 // 导致 TestStreamLogFourWayData 的 GenerationMs>0 断言偶发失败（flaky）。
 func completeThenHangUpstream(t *testing.T) *httptest.Server {
@@ -151,7 +151,7 @@ func TestStreamCompletedThenClientCloseSameFmt(t *testing.T) {
 }
 
 // TestStreamLogFourWayData 跨格式流式：日志详情应完整记录四组请求/响应数据
-// （客户端请求 / 代理→上游请求 / 上游响应 / 代理→客户端响应），认证头脱敏（v1.0.0）。
+// （客户端请求 / 代理→上游请求 / 上游响应 / 代理→客户端响应），认证头脱敏。
 func TestStreamLogFourWayData(t *testing.T) {
 	up := completeThenHangUpstream(t)
 	defer up.Close()
